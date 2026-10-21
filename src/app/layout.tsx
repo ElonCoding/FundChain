@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   title:       "FundChain — Group Payments & Messaging",
   description: "A Web3 super-app for seamless group payments, transparent fund pooling, and real-time messaging. Built on Avalanche for speed, trust, and zero fees.",
   keywords:    ["Group Payments", "Web3", "Fund Pooling", "DApp", "Messaging", "Avalanche", "Blockchain"],
+  robots:      "index, follow",
+  alternates:  { canonical: "https://fundchain.app" },
   openGraph: {
     title:       "FundChain — Group Payments & Messaging",
     description: "Collect money transparently, chat instantly, and pay trustlessly with your group.",
@@ -25,7 +27,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased dark`}>
-      <body className="h-full overflow-hidden bg-zinc-950">
+      <body className="h-full bg-zinc-950">
         <Web3Provider>
           <ToastProvider>
             {children}
@@ -38,3 +40,4 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+
