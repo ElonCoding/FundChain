@@ -36,9 +36,14 @@ export const avalancheFuji = defineChain({
 export const CONTRACT_ADDRESSES = {
   fundPool: {
     [avalancheMainnet.id]: "0x0000000000000000000000000000000000000000" as `0x${string}`,
-    [avalancheFuji.id]: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+    [avalancheFuji.id]:    "0xf838734D3655776AF116B3f41256EaEbFb8cD864" as `0x${string}`,
+  },
+  flexiblePool: {
+    [avalancheMainnet.id]: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+    [avalancheFuji.id]:    "0x54A39697E45a7dC7d6DC7e43B3cDAF8Cd71cBC43" as `0x${string}`,
   },
 } as const;
+
 
 /* ──────────────────────────────────────────────────────────
  *  Explorer helpers
