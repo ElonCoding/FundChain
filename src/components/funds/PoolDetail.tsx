@@ -159,7 +159,7 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
             {
               label: "Per Person",
               value: isFlexible
-                ? `Flexible (min ${pool.minContributionWei > 0n
+                ? `Flexible (min ${pool.minContributionWei > BigInt(0)
                     ? (Number(pool.minContributionWei) / 1e18).toFixed(2)
                     : "0"} AVAX)`
                 : pool.contributionAmount,
@@ -246,7 +246,7 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
                       type="number"
                       step="0.01"
                       min={Number(pool.minContributionWei) / 1e18}
-                      max={pool.maxContributionWei > 0n ? Number(pool.maxContributionWei) / 1e18 : undefined}
+                      max={pool.maxContributionWei > BigInt(0) ? Number(pool.maxContributionWei) / 1e18 : undefined}
                       value={customAmt}
                       onChange={(e) => setCustomAmt(e.target.value)}
                       placeholder={`Min: ${(Number(pool.minContributionWei) / 1e18).toFixed(2)} AVAX`}
