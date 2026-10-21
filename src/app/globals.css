@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #09090b;
+  --color-foreground: #fafafa;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ─── Global base ──────────────────────────────────────────────────────── */
+
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  color-scheme: dark;
+}
+
+/* ─── Scrollbars ───────────────────────────────────────────────────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(63, 63, 70, 0.5) transparent;
+  box-sizing: border-box;
+}
+
+*::-webkit-scrollbar         { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track   { background: transparent; }
+*::-webkit-scrollbar-thumb   { background-color: rgba(63,63,70,0.4); border-radius: 9999px; }
+*::-webkit-scrollbar-corner  { background: transparent; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Selection ────────────────────────────────────────────────────────── */
+
+::selection {
+  background-color: rgba(239, 68, 68, 0.3);
+  color: white;
+}
+
+/* ─── Focus ────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid rgba(249, 115, 22, 0.5);
+  outline-offset: 2px;
+}
+
+/* ─── Smooth scroll ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+/* ─── Keyframes ────────────────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes slideInFromBottom1 {
+  from { opacity: 0; transform: translateY(4px);  }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes spinnerRotate {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.6; transform: scale(0.85); }
+}
+
+@keyframes winner-bounce {
+  0%, 100% { transform: translateY(0)    scale(1);   }
+  50%       { transform: translateY(-6px) scale(1.04); }
+}
+
+/* ─── Animation utilities ──────────────────────────────────────────────── */
+
+.animate-in {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: forwards;
+}
+.fade-in                 { animation-name: fadeIn;              }
+.slide-in-from-bottom-2  { animation-name: slideUp;             }
+.slide-in-from-bottom-1  { animation-name: slideInFromBottom1;  }
+.slide-in-from-right-5   { animation-name: slideRight;          }
+.zoom-in-95              { animation-name: scaleIn;             }
+.duration-100            { animation-duration:  100ms !important; }
+.duration-150            { animation-duration:  150ms !important; }
+.duration-200            { animation-duration:  200ms !important; }
+.duration-300            { animation-duration:  300ms !important; }
+
+/* ─── Skeleton shimmer ─────────────────────────────────────────────────── */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(39,39,42,0.6) 25%,
+    rgba(63,63,70,0.4) 50%,
+    rgba(39,39,42,0.6) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ─── Scrollbar hiding utility ─────────────────────────────────────────── */
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* ─── Line clamp ───────────────────────────────────────────────────────── */
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ─── Winner animation ─────────────────────────────────────────────────── */
+
+.winner-bounce { animation: winner-bounce 0.6s ease-in-out; }
+.pulse-dot     { animation: pulse-dot 1.4s ease-in-out infinite; }

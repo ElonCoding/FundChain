@@ -1,0 +1,51 @@
+# ─── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ─── Next.js ─────────────────────────────────────────────────────────────────
+/.next/
+/out/
+
+# ─── Production build ────────────────────────────────────────────────────────
+/build
+
+# ─── Hardhat artifacts & cache ───────────────────────────────────────────────
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/.env
+
+# ─── Testing ─────────────────────────────────────────────────────────────────
+/coverage
+
+# ─── Environment files ───────────────────────────────────────────────────────
+# .env.example is intentionally NOT ignored (safe to commit as a template)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ─── Misc ────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.pem
+
+# ─── Debug logs ──────────────────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── TypeScript ──────────────────────────────────────────────────────────────
+*.tsbuildinfo
+next-env.d.ts
+
+# ─── Vercel ──────────────────────────────────────────────────────────────────
+.vercel

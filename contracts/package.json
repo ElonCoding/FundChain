@@ -1,0 +1,30 @@
+{
+  "name": "fundchain-contracts",
+  "version": "1.0.0",
+  "description": "FundChain smart contracts — Hardhat project for Avalanche C-Chain",
+  "private": true,
+  "scripts": {
+    "compile":        "hardhat compile",
+    "test":           "hardhat test",
+    "clean":          "hardhat clean",
+    "deploy:fuji":    "hardhat run scripts/deploy.ts --network fuji",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network mainnet",
+    "verify:fuji":    "hardhat verify --network fuji",
+    "verify:mainnet": "hardhat verify --network mainnet"
+  },
+  "dependencies": {
+    "@chainlink/contracts": "^1.2.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify":  "^2.0.0",
+    "hardhat":                          "^2.22.0",
+    "typescript":                       "^5.4.0",
+    "ts-node":                          "^10.9.2",
+    "@types/node":                      "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
