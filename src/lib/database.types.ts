@@ -20,13 +20,19 @@ export interface Database {
           created_at:     string;
           updated_at:     string;
         };
-        Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "id" | "created_at" | "updated_at" | "last_seen"> & {
-          id?:         string;
-          last_seen?:  string;
-          created_at?: string;
-          updated_at?: string;
+        Insert: {
+          id?:             string;
+          wallet_address: string;
+          display_name:   string;
+          avatar_url?:     string | null;
+          bio?:            string | null;
+          status?:         "online" | "away" | "offline";
+          last_seen?:      string;
+          created_at?:     string;
+          updated_at?:     string;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
       };
 
       conversations: {
@@ -44,12 +50,22 @@ export interface Database {
           created_at:      string;
           updated_at:      string;
         };
-        Insert: Omit<Database["public"]["Tables"]["conversations"]["Row"], "id" | "created_at" | "updated_at"> & {
-          id?:         string;
-          created_at?: string;
-          updated_at?: string;
+        Insert: {
+          id?:              string;
+          type:            "private" | "group" | "fund-group";
+          name:            string;
+          avatar_url?:      string | null;
+          description?:     string | null;
+          pool_id?:         number | null;
+          pool_type?:       "event" | "luckydraw" | null;
+          created_by?:      string | null;
+          last_message_at?: string | null;
+          last_message?:    string | null;
+          created_at?:      string;
+          updated_at?:      string;
         };
         Update: Partial<Database["public"]["Tables"]["conversations"]["Insert"]>;
+        Relationships: [];
       };
 
       conversation_participants: {
@@ -59,10 +75,14 @@ export interface Database {
           is_admin:        boolean;
           joined_at:       string;
         };
-        Insert: Omit<Database["public"]["Tables"]["conversation_participants"]["Row"], "joined_at"> & {
-          joined_at?: string;
+        Insert: {
+          conversation_id: string;
+          profile_id:      string;
+          is_admin?:       boolean;
+          joined_at?:      string;
         };
         Update: Partial<Database["public"]["Tables"]["conversation_participants"]["Insert"]>;
+        Relationships: [];
       };
 
       messages: {
@@ -81,11 +101,23 @@ export interface Database {
           metadata:        Json | null;
           created_at:      string;
         };
-        Insert: Omit<Database["public"]["Tables"]["messages"]["Row"], "id" | "created_at"> & {
-          id?:         string;
-          created_at?: string;
+        Insert: {
+          id?:              string;
+          conversation_id: string;
+          sender_id:       string;
+          content:         string;
+          message_type?:    "text" | "image" | "file" | "system" | "tx";
+          file_url?:        string | null;
+          file_name?:       string | null;
+          file_size?:       number | null;
+          tx_hash?:         string | null;
+          tx_chain_id?:     number | null;
+          reply_to?:        string | null;
+          metadata?:        Json | null;
+          created_at?:      string;
         };
-        Update: never; // messages are immutable
+        Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
+        Relationships: [];
       };
 
       pool_members: {
@@ -97,11 +129,29 @@ export interface Database {
           tx_hash:        string | null;
           contributed_at: string;
         };
-        Insert: Omit<Database["public"]["Tables"]["pool_members"]["Row"], "contributed_at"> & {
+        Insert: {
+          pool_id:        number;
+          profile_id?:     string | null;
+          wallet_address: string;
+          amount_wei:     string;
+          tx_hash?:        string | null;
           contributed_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["pool_members"]["Insert"]>;
+        Relationships: [];
       };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

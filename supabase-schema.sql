@@ -1,114 +1,123 @@
 -- ═══════════════════════════════════════════════════════════════════════════
---  FundChain — Supabase Database Schema
---  Run this in: Supabase Dashboard → SQL Editor → "New Query"
+--  FundChain — Dynamic Supabase Schema (Zero Static Mock Data)
+--  Run in: Supabase Dashboard -> SQL Editor -> Run
 -- ═══════════════════════════════════════════════════════════════════════════
 
--- ── Extensions ──────────────────────────────────────────────────────────────
+-- 1. Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- ═══════════════════════════════════════════════════════════════════════════
---  TABLE: profiles
---  One row per wallet address (created on first connect)
--- ═══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS profiles (
+-- 2. Clean previous triggers safely
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'messages') THEN
+    DROP TRIGGER IF EXISTS on_message_inserted ON public.messages;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'conversations') THEN
+    DROP TRIGGER IF EXISTS set_conversations_updated_at ON public.conversations;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'profiles') THEN
+    DROP TRIGGER IF EXISTS set_profiles_updated_at ON public.profiles;
+  END IF;
+END $$;
+
+DROP FUNCTION IF EXISTS trigger_update_conversation_last_message();
+DROP FUNCTION IF EXISTS trigger_set_updated_at();
+
+-- 3. Profiles (Created dynamically upon wallet connect)
+CREATE TABLE IF NOT EXISTS public.profiles (
   id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
   wallet_address  TEXT        UNIQUE NOT NULL,
   display_name    TEXT        NOT NULL DEFAULT 'Anonymous',
   avatar_url      TEXT,
   bio             TEXT,
-  status          TEXT        NOT NULL DEFAULT 'offline'
-                              CHECK (status IN ('online','away','offline')),
+  status          TEXT        NOT NULL DEFAULT 'online'
+                              CHECK (status IN ('online', 'away', 'offline')),
   last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_profiles_wallet ON profiles (wallet_address);
+CREATE INDEX IF NOT EXISTS idx_profiles_wallet ON public.profiles (wallet_address);
 
--- ═══════════════════════════════════════════════════════════════════════════
---  TABLE: conversations
---  Private, group, and fund-group chat rooms
--- ═══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS conversations (
+-- 4. Conversations (Created dynamically when chats/pools are made)
+CREATE TABLE IF NOT EXISTS public.conversations (
   id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
   type            TEXT        NOT NULL DEFAULT 'private'
-                              CHECK (type IN ('private','group','fund-group')),
+                              CHECK (type IN ('private', 'group', 'fund-group')),
   name            TEXT        NOT NULL,
   avatar_url      TEXT,
   description     TEXT,
-  pool_id         INT,                       -- links to on-chain pool (fund-group)
-  pool_type       TEXT        CHECK (pool_type IN ('event','luckydraw')),
-  created_by      UUID        REFERENCES profiles(id) ON DELETE SET NULL,
+  pool_id         INT,                       -- on-chain pool ID
+  pool_type       TEXT        CHECK (pool_type IN ('event', 'luckydraw')),
+  created_by      UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
   last_message_at TIMESTAMPTZ DEFAULT NOW(),
-  last_message    TEXT,                      -- denormalised preview
+  last_message    TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations (updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_conversations_pool    ON conversations (pool_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated ON public.conversations (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_pool    ON public.conversations (pool_id);
 
--- ═══════════════════════════════════════════════════════════════════════════
---  TABLE: conversation_participants
--- ═══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS conversation_participants (
-  conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-  profile_id      UUID REFERENCES profiles(id)      ON DELETE CASCADE,
+-- 5. Conversation Participants
+CREATE TABLE IF NOT EXISTS public.conversation_participants (
+  conversation_id UUID REFERENCES public.conversations(id) ON DELETE CASCADE,
+  profile_id      UUID REFERENCES public.profiles(id)      ON DELETE CASCADE,
   is_admin        BOOL NOT NULL DEFAULT FALSE,
   joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (conversation_id, profile_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cp_profile ON conversation_participants (profile_id);
+CREATE INDEX IF NOT EXISTS idx_cp_profile ON public.conversation_participants (profile_id);
 
--- ═══════════════════════════════════════════════════════════════════════════
---  TABLE: messages
--- ═══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS messages (
+-- 6. Messages (Real-time dynamic chat & transactions)
+CREATE TABLE IF NOT EXISTS public.messages (
   id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-  conversation_id UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  sender_id       UUID        NOT NULL REFERENCES profiles(id)      ON DELETE CASCADE,
+  conversation_id UUID        NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+  sender_id       UUID        NOT NULL REFERENCES public.profiles(id)      ON DELETE CASCADE,
   content         TEXT        NOT NULL DEFAULT '',
   message_type    TEXT        NOT NULL DEFAULT 'text'
-                              CHECK (message_type IN ('text','image','file','system','tx')),
-  -- For file/image messages
+                              CHECK (message_type IN ('text', 'image', 'file', 'system', 'tx')),
   file_url        TEXT,
   file_name       TEXT,
   file_size       BIGINT,
-  -- For on-chain tx messages
   tx_hash         TEXT,
   tx_chain_id     INT,
-  -- Reply threading
-  reply_to        UUID        REFERENCES messages(id) ON DELETE SET NULL,
-  -- Metadata (JSON for extensibility)
+  reply_to        UUID        REFERENCES public.messages(id) ON DELETE SET NULL,
   metadata        JSONB,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_conv    ON messages (conversation_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_messages_sender  ON messages (sender_id);
-CREATE INDEX IF NOT EXISTS idx_messages_tx      ON messages (tx_hash) WHERE tx_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_conv    ON public.messages (conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sender  ON public.messages (sender_id);
+CREATE INDEX IF NOT EXISTS idx_messages_tx      ON public.messages (tx_hash) WHERE tx_hash IS NOT NULL;
 
--- ═══════════════════════════════════════════════════════════════════════════
---  TABLE: pool_members
---  Mirrors on-chain contributors — populated by backend after ContributionMade event
--- ═══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS pool_members (
+-- 7. Pool Members (Mirrors on-chain participants dynamically)
+CREATE TABLE IF NOT EXISTS public.pool_members (
   pool_id         INT         NOT NULL,
-  profile_id      UUID        REFERENCES profiles(id) ON DELETE SET NULL,
+  profile_id      UUID        REFERENCES public.profiles(id) ON DELETE SET NULL,
   wallet_address  TEXT        NOT NULL,
-  amount_wei      TEXT        NOT NULL,   -- stored as string to avoid overflow
+  amount_wei      TEXT        NOT NULL,
   tx_hash         TEXT,
   contributed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (pool_id, wallet_address)
 );
 
-CREATE INDEX IF NOT EXISTS idx_pool_members_profile ON pool_members (profile_id);
+CREATE INDEX IF NOT EXISTS idx_pool_members_profile ON public.pool_members (profile_id);
 
--- ═══════════════════════════════════════════════════════════════════════════
---  TRIGGERS — updated_at maintenance
--- ═══════════════════════════════════════════════════════════════════════════
+-- 8. Pool Events (On-chain activity logs)
+CREATE TABLE IF NOT EXISTS public.pool_events (
+  id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pool_id         INT         NOT NULL,
+  event_type      TEXT        NOT NULL,
+  data            JSONB       NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pool_events_pool ON public.pool_events (pool_id, created_at DESC);
+
+-- 9. Triggers: Auto updated_at Maintenance
 CREATE OR REPLACE FUNCTION trigger_set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -118,18 +127,18 @@ END;
 $$;
 
 CREATE TRIGGER set_profiles_updated_at
-  BEFORE UPDATE ON profiles
+  BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
 CREATE TRIGGER set_conversations_updated_at
-  BEFORE UPDATE ON conversations
+  BEFORE UPDATE ON public.conversations
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
--- ─── Trigger: after insert on messages → update conversation last_message ───
+-- 10. Trigger: Auto sync conversation preview on new message
 CREATE OR REPLACE FUNCTION trigger_update_conversation_last_message()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  UPDATE conversations
+  UPDATE public.conversations
   SET
     last_message    = LEFT(NEW.content, 120),
     last_message_at = NEW.created_at,
@@ -140,83 +149,68 @@ END;
 $$;
 
 CREATE TRIGGER on_message_inserted
-  AFTER INSERT ON messages
+  AFTER INSERT ON public.messages
   FOR EACH ROW EXECUTE FUNCTION trigger_update_conversation_last_message();
 
--- ═══════════════════════════════════════════════════════════════════════════
---  ROW LEVEL SECURITY (RLS)
---  Hackathon mode: broad read access; restrict writes to authenticated callers.
---  Tighten per-user rules in production using Supabase Auth JWT claims.
--- ═══════════════════════════════════════════════════════════════════════════
-ALTER TABLE profiles              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE conversations         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE conversation_participants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pool_members          ENABLE ROW LEVEL SECURITY;
+-- 11. Row Level Security (RLS)
+ALTER TABLE public.profiles                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversations             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pool_members              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pool_events               ENABLE ROW LEVEL SECURITY;
 
--- profiles: anyone can read; anyone can insert/update (wallet-gated in app)
-CREATE POLICY "profiles_read"   ON profiles FOR SELECT USING (true);
-CREATE POLICY "profiles_insert" ON profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "profiles_update" ON profiles FOR UPDATE USING (true);
+-- Dynamic open policies (wallet/signature verified client-side & server-side)
+CREATE POLICY "profiles_select"   ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "profiles_insert"   ON public.profiles FOR INSERT WITH CHECK (true);
+CREATE POLICY "profiles_update"   ON public.profiles FOR UPDATE USING (true);
 
--- conversations: full public access (suitable for demo; restrict in prod)
-CREATE POLICY "conversations_read"   ON conversations FOR SELECT USING (true);
-CREATE POLICY "conversations_insert" ON conversations FOR INSERT WITH CHECK (true);
-CREATE POLICY "conversations_update" ON conversations FOR UPDATE USING (true);
+CREATE POLICY "conversations_select"   ON public.conversations FOR SELECT USING (true);
+CREATE POLICY "conversations_insert"   ON public.conversations FOR INSERT WITH CHECK (true);
+CREATE POLICY "conversations_update"   ON public.conversations FOR UPDATE USING (true);
 
--- participants: public read
-CREATE POLICY "cp_read"   ON conversation_participants FOR SELECT USING (true);
-CREATE POLICY "cp_insert" ON conversation_participants FOR INSERT WITH CHECK (true);
-CREATE POLICY "cp_delete" ON conversation_participants FOR DELETE USING (true);
+CREATE POLICY "cp_select"   ON public.conversation_participants FOR SELECT USING (true);
+CREATE POLICY "cp_insert"   ON public.conversation_participants FOR INSERT WITH CHECK (true);
+CREATE POLICY "cp_delete"   ON public.conversation_participants FOR DELETE USING (true);
 
--- messages: public read/insert (no delete/update for immutability)
-CREATE POLICY "messages_read"   ON messages FOR SELECT USING (true);
-CREATE POLICY "messages_insert" ON messages FOR INSERT WITH CHECK (true);
+CREATE POLICY "messages_select"   ON public.messages FOR SELECT USING (true);
+CREATE POLICY "messages_insert"   ON public.messages FOR INSERT WITH CHECK (true);
 
--- pool_members: public read/insert
-CREATE POLICY "pm_read"   ON pool_members FOR SELECT USING (true);
-CREATE POLICY "pm_insert" ON pool_members FOR INSERT WITH CHECK (true);
-CREATE POLICY "pm_update" ON pool_members FOR UPDATE USING (true);
+CREATE POLICY "pm_select"   ON public.pool_members FOR SELECT USING (true);
+CREATE POLICY "pm_insert"   ON public.pool_members FOR INSERT WITH CHECK (true);
+CREATE POLICY "pm_update"   ON public.pool_members FOR UPDATE USING (true);
 
--- ═══════════════════════════════════════════════════════════════════════════
---  REALTIME PUBLICATION
---  Enables Supabase Realtime to broadcast changes to subscribed clients.
--- ═══════════════════════════════════════════════════════════════════════════
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE conversations;
-ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+CREATE POLICY "pe_select"   ON public.pool_events FOR SELECT USING (true);
+CREATE POLICY "pe_insert"   ON public.pool_events FOR INSERT WITH CHECK (true);
 
--- ═══════════════════════════════════════════════════════════════════════════
---  SEED DATA — 3 Demo Conversations (optional; delete before production)
--- ═══════════════════════════════════════════════════════════════════════════
-INSERT INTO profiles (id, wallet_address, display_name, status) VALUES
-  ('11111111-1111-1111-1111-111111111111', '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18', 'Prateek',   'online'),
-  ('22222222-2222-2222-2222-222222222222', '0xdef2569e8B4B42200E41e9C3bc31E9a93fC35678', 'Ananya P.', 'online'),
-  ('33333333-3333-3333-3333-333333333333', '0xabc1234567890abcdef1234567890abcdef1234', 'Rahul S.',  'away')
-ON CONFLICT (wallet_address) DO NOTHING;
+-- 12. Realtime publication
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'profiles'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'conversations'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
+  END IF;
 
-INSERT INTO conversations (id, type, name, description, pool_id, pool_type, created_by) VALUES
-  ('aaaa0000-0000-0000-0000-000000000001', 'fund-group', 'Teacher''s Birthday 🎂', 'Pool fund chat', 0, 'event',     '11111111-1111-1111-1111-111111111111'),
-  ('aaaa0000-0000-0000-0000-000000000002', 'fund-group', 'Sports Day Lucky Draw 🎲', 'Raffle chat',   1, 'luckydraw', '22222222-2222-2222-2222-222222222222'),
-  ('aaaa0000-0000-0000-0000-000000000003', 'private',    'Prateek & Rahul',          NULL,            NULL, NULL,   '11111111-1111-1111-1111-111111111111')
-ON CONFLICT DO NOTHING;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+  END IF;
 
-INSERT INTO conversation_participants (conversation_id, profile_id, is_admin) VALUES
-  ('aaaa0000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', TRUE),
-  ('aaaa0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', FALSE),
-  ('aaaa0000-0000-0000-0000-000000000001', '33333333-3333-3333-3333-333333333333', FALSE),
-  ('aaaa0000-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', TRUE),
-  ('aaaa0000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', FALSE),
-  ('aaaa0000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', FALSE),
-  ('aaaa0000-0000-0000-0000-000000000003', '33333333-3333-3333-3333-333333333333', FALSE)
-ON CONFLICT DO NOTHING;
-
-INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES
-  ('aaaa0000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'This group has been created for the Teacher''s Birthday fund 🎂', 'system'),
-  ('aaaa0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'I just contributed 0.1 AVAX! 🎉',                                 'text'),
-  ('aaaa0000-0000-0000-0000-000000000001', '33333333-3333-3333-3333-333333333333', 'Same, done! Let''s collect the rest quickly.',                    'text'),
-  ('aaaa0000-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'Lucky Draw pool is live! Pay 0.25 AVAX to enter 🎲',               'system'),
-  ('aaaa0000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'I''m in! Good luck everyone 🤞',                                   'text'),
-  ('aaaa0000-0000-0000-0000-000000000003', '33333333-3333-3333-3333-333333333333', 'Hey, have you seen the new Funds section?',                        'text'),
-  ('aaaa0000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'Yes! Just created a pool on Avalanche Fuji 🚀',                    'text')
-ON CONFLICT DO NOTHING;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'pool_events'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.pool_events;
+  END IF;
+END $$;
