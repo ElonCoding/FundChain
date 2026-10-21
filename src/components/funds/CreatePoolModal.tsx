@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useAccount } from "wagmi";
 import { cn } from "@/lib/utils";
+import { useCreateEventPool, useCreateLuckyDrawPool } from "@/hooks/useFlexiblePool";
 
 interface CreatePoolModalProps {
   onClose: () => void;
@@ -26,23 +28,49 @@ export default function CreatePoolModal({ onClose }: CreatePoolModalProps) {
   const [deadline,       setDeadline]       = useState("");
   const [recipientAddr,  setRecipientAddr]  = useState("");
 
-  // ── Submission ─────────────────────────────────────────────────────────
-  const [phase,          setPhase]          = useState<SubmitPhase>("idle");
-  const [deployedTx,     setDeployedTx]     = useState<string | null>(null);
+  // ── Real On-Chain Hooks ────────────────────────────────────────────────
+  const { createEventPool, hash: eventHash, isPending: eventPending, isConfirming: eventConfirming, isSuccess: eventSuccess, error: eventError } = useCreateEventPool();
+  const { createLuckyDrawPool, hash: drawHash, isPending: drawPending, isConfirming: drawConfirming, isSuccess: drawSuccess, error: drawError } = useCreateLuckyDrawPool();
+  const { isConnected } = useAccount();
+
+  const isDeploying = eventPending || eventConfirming || drawPending || drawConfirming;
+  const currentHash = eventHash || drawHash;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setPhase("deploying");
+    if (!isConnected) {
+      alert("Please connect your wallet first!");
+      return;
+    }
 
     try {
-      // Production: call useCreateEventPool() or useCreateLuckyDrawPool()
-      await new Promise((r) => setTimeout(r, 2000));
-      const mockHash = "0x" + Array.from({ length: 64 }, () =>
-        Math.floor(Math.random() * 16).toString(16)).join("");
-      setDeployedTx(mockHash);
-      setPhase("success");
-    } catch {
-      setPhase("error");
+      const deadlineSec = deadline ? Math.floor(new Date(deadline).getTime() / 1000) : 0;
+      const grpId = "group-" + Date.now();
+
+      if (poolType === "event") {
+        createEventPool({
+          title,
+          description,
+          groupId: grpId,
+          contributionAmount: contribMode === "fixed" ? fixedAmount : "",
+          minContribution: contribMode === "flexible" ? minAmount : "0",
+          maxContribution: contribMode === "flexible" && maxAmount ? maxAmount : "0",
+          recipientAddress: (recipientAddr as `0x${string}`) || "",
+          deadline: deadlineSec,
+        });
+      } else {
+        createLuckyDrawPool({
+          title,
+          description,
+          groupId: grpId,
+          contributionAmount: contribMode === "fixed" ? fixedAmount : "",
+          minContribution: contribMode === "flexible" ? minAmount : "0",
+          maxContribution: contribMode === "flexible" && maxAmount ? maxAmount : "0",
+          deadline: deadlineSec,
+        });
+      }
+    } catch (err) {
+      console.error("Deploy error:", err);
     }
   }
 
@@ -68,7 +96,7 @@ export default function CreatePoolModal({ onClose }: CreatePoolModalProps) {
   ];
 
   // ── Success screen ─────────────────────────────────────────────────────
-  if (phase === "success") {
+  if (eventSuccess || drawSuccess) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -78,21 +106,21 @@ export default function CreatePoolModal({ onClose }: CreatePoolModalProps) {
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-white mb-2">Pool Deployed! 🚀</h3>
+          <h3 className="text-lg font-bold text-white mb-2">Pool Deployed On-Chain! 🚀</h3>
           <p className="text-sm text-zinc-400 mb-4">
-            Your {poolType === "luckydraw" ? "Lucky Draw" : "Event"} pool &quot;{title}&quot; is now live on Avalanche.
+            Your {poolType === "luckydraw" ? "Lucky Draw" : "Event"} pool &quot;{title}&quot; is confirmed on Avalanche Fuji.
           </p>
-          {deployedTx && (
+          {currentHash && (
             <a
-              href={`https://snowtrace.io/tx/${deployedTx}`}
+              href={`https://testnet.snowtrace.io/tx/${currentHash}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-zinc-400 hover:text-orange-400 transition-all mb-4"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-orange-400 hover:text-orange-300 transition-all mb-4"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              View Deployment on SnowTrace
+              View On-Chain Tx on SnowTrace
             </a>
           )}
           <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-zinc-800 border border-zinc-700/50 text-sm text-zinc-300 font-medium hover:bg-zinc-700 transition-all">
@@ -312,17 +340,22 @@ export default function CreatePoolModal({ onClose }: CreatePoolModalProps) {
           >
             Cancel
           </button>
+          {eventError || drawError ? (
+            <p className="text-xs text-red-400 w-full text-center">
+              {(eventError || drawError)?.message.slice(0, 100)}…
+            </p>
+          ) : null}
           <button
             onClick={handleSubmit}
-            disabled={phase === "deploying" || !isValid}
+            disabled={isDeploying || !isValid}
             className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-orange-500/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {phase === "deploying" ? (
+            {isDeploying ? (
               <>
                 <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Deploying…
+                {eventConfirming || drawConfirming ? "Confirming On-Chain…" : "Signing Tx in Wallet…"}
               </>
             ) : poolType === "luckydraw" ? "🎲 Create Lucky Draw" : "🎯 Create Event Pool"}
           </button>

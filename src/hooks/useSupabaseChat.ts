@@ -159,12 +159,9 @@ export function useConversations(
   useEffect(() => {
     if (!profileId) return;
 
-    if (convChannelRef.current) {
-      supabase.removeChannel(convChannelRef.current);
-    }
-
-    convChannelRef.current = supabase
-      .channel(`conv-updates:${profileId}`)
+    const channelName = `conv-updates-${profileId}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "conversations" },
@@ -188,11 +185,11 @@ export function useConversations(
       )
       .subscribe();
 
+    convChannelRef.current = channel;
+
     return () => {
-      if (convChannelRef.current) {
-        supabase.removeChannel(convChannelRef.current);
-        convChannelRef.current = null;
-      }
+      supabase.removeChannel(channel);
+      convChannelRef.current = null;
     };
   }, [profileId]);
 
@@ -200,12 +197,9 @@ export function useConversations(
   useEffect(() => {
     if (!profileId) return;
 
-    if (msgChannelRef.current) {
-      supabase.removeChannel(msgChannelRef.current);
-    }
-
-    msgChannelRef.current = supabase
-      .channel(`unread-tracker:${profileId}`)
+    const channelName = `unread-tracker-${profileId}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
@@ -232,11 +226,11 @@ export function useConversations(
       )
       .subscribe();
 
+    msgChannelRef.current = channel;
+
     return () => {
-      if (msgChannelRef.current) {
-        supabase.removeChannel(msgChannelRef.current);
-        msgChannelRef.current = null;
-      }
+      supabase.removeChannel(channel);
+      msgChannelRef.current = null;
     };
   // Only re-subscribe when profileId changes — activeChatId is read via ref
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -303,7 +297,7 @@ export function useMessages(conversationId: string | null) {
       setError(err.message);
       console.error("[useMessages] fetchMessages:", err.message);
     } else {
-      setMessages((data ?? []) as MessageWithSender[]);
+      setMessages((data ?? []) as unknown as MessageWithSender[]);
     }
     setIsLoading(false);
   }, []);
@@ -327,8 +321,9 @@ export function useMessages(conversationId: string | null) {
     }
 
     // Open realtime channel for this conversation
-    channelRef.current = supabase
-      .channel(`messages:conv:${conversationId}`)
+    const channelName = `messages-${conversationId}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
       .on(
         "postgres_changes",
         {
@@ -368,11 +363,11 @@ export function useMessages(conversationId: string | null) {
         }
       });
 
+    channelRef.current = channel;
+
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      supabase.removeChannel(channel);
+      channelRef.current = null;
     };
   }, [conversationId, fetchMessages]);
 

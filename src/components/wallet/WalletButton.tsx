@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, useConnect, useDisconnect, useBalance, useChainId } from "wagmi";
+import { formatUnits } from "viem";
 import { cn, shortenAddress } from "@/lib/utils";
 import { avalancheFuji, avalancheMainnet } from "@/lib/contracts/chains";
 
@@ -38,7 +39,7 @@ export default function WalletButton() {
           {/* Balance */}
           {balance && (
             <span className="text-xs text-zinc-500 font-medium hidden sm:block">
-              {parseFloat(balance.formatted).toFixed(3)} {balance.symbol}
+              {parseFloat(formatUnits(balance.value, balance.decimals)).toFixed(3)} {balance.symbol}
             </span>
           )}
 
@@ -78,7 +79,7 @@ export default function WalletButton() {
                   <div>
                     <p className="text-[10px] text-zinc-500 mb-1">Balance</p>
                     <p className="text-sm font-bold text-white">
-                      {parseFloat(balance.formatted).toFixed(6)} {balance.symbol}
+                      {parseFloat(formatUnits(balance.value, balance.decimals)).toFixed(6)} {balance.symbol}
                     </p>
                   </div>
                 )}

@@ -232,6 +232,19 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
             {loading ? "Sending…" : SUPABASE_ENABLED ? "Send Code" : "Continue →"}
           </button>
 
+          <div className="flex items-center gap-3 w-full my-4">
+            <div className="flex-1 h-px bg-zinc-800" />
+            <span className="text-[11px] text-zinc-600 uppercase tracking-wider">or</span>
+            <div className="flex-1 h-px bg-zinc-800" />
+          </div>
+
+          <button
+            onClick={() => setStep("profile")}
+            className="w-full py-3 rounded-xl bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 text-zinc-300 font-medium text-xs transition-all flex items-center justify-center gap-2"
+          >
+            <span>👛</span> Continue with Wallet Only (Skip Phone)
+          </button>
+
           <button onClick={() => setStep("welcome")} className="mt-4 text-xs text-zinc-600 hover:text-zinc-400 transition-colors">← Back</button>
         </div>
       )}

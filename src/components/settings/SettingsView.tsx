@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
+import { formatUnits } from "viem";
 import { cn, shortenAddress } from "@/lib/utils";
 import { signOut, SUPABASE_ENABLED } from "@/lib/supabase";
 
@@ -113,7 +114,7 @@ export default function SettingsView() {
                   <div className="rounded-xl bg-zinc-900/50 border border-zinc-700/30 p-3">
                     <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Balance</p>
                     <p className="text-sm font-bold text-white mt-1">
-                      {balance ? `${parseFloat(balance.formatted).toFixed(4)} ${balance.symbol}` : "—"}
+                      {balance ? `${parseFloat(formatUnits(balance.value, balance.decimals)).toFixed(4)} ${balance.symbol}` : "—"}
                     </p>
                   </div>
                   <div className="rounded-xl bg-zinc-900/50 border border-zinc-700/30 p-3">

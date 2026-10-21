@@ -18,9 +18,9 @@ import { avalancheFuji, avalancheMainnet, CONTRACT_ADDRESSES } from "@/lib/contr
 function useContractAddress(): `0x${string}` {
   const chainId = useChainId();
   if (chainId === avalancheMainnet.id) {
-    return CONTRACT_ADDRESSES.fundPool[avalancheMainnet.id];
+    return CONTRACT_ADDRESSES.flexiblePool[avalancheMainnet.id];
   }
-  return CONTRACT_ADDRESSES.fundPool[avalancheFuji.id];
+  return CONTRACT_ADDRESSES.flexiblePool[avalancheFuji.id];
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -94,14 +94,12 @@ export function useUserCreatedPools() {
   });
 }
 
-export function useUserContributedPools() {
+export function useContributions(offset: bigint = BigInt(0), limit: bigint = BigInt(50)) {
   const address = useContractAddress();
-  const { address: userAddress } = useAccount();
   return useReadContract({
     address, abi: FLEXIBLE_POOL_ABI,
-    functionName: "getUserContributedPools",
-    args: [userAddress!],
-    query: { enabled: !!userAddress },
+    functionName: "getContributions",
+    args: [offset, limit],
   });
 }
 
@@ -126,9 +124,9 @@ export function useCreateEventPool() {
   const { writeContract, hash, isPending, isConfirming, isSuccess, error, reset } = useTxBundle();
 
   function createEventPool(p: EventPoolParams) {
-    const fixedWei = p.contributionAmount ? parseEther(p.contributionAmount) : 0n;
-    const minWei   = p.minContribution    ? parseEther(p.minContribution)    : 0n;
-    const maxWei   = p.maxContribution    ? parseEther(p.maxContribution)    : 0n;
+    const fixedWei = p.contributionAmount ? parseEther(p.contributionAmount) : BigInt(0);
+    const minWei   = p.minContribution    ? parseEther(p.minContribution)    : BigInt(0);
+    const maxWei   = p.maxContribution    ? parseEther(p.maxContribution)    : BigInt(0);
     const recipient = (p.recipientAddress || "0x0000000000000000000000000000000000000000") as `0x${string}`;
 
     writeContract({
@@ -156,9 +154,9 @@ export function useCreateLuckyDrawPool() {
   const { writeContract, hash, isPending, isConfirming, isSuccess, error, reset } = useTxBundle();
 
   function createLuckyDrawPool(p: LuckyDrawPoolParams) {
-    const fixedWei = p.contributionAmount ? parseEther(p.contributionAmount) : 0n;
-    const minWei   = p.minContribution    ? parseEther(p.minContribution)    : 0n;
-    const maxWei   = p.maxContribution    ? parseEther(p.maxContribution)    : 0n;
+    const fixedWei = p.contributionAmount ? parseEther(p.contributionAmount) : BigInt(0);
+    const minWei   = p.minContribution    ? parseEther(p.minContribution)    : BigInt(0);
+    const maxWei   = p.maxContribution    ? parseEther(p.maxContribution)    : BigInt(0);
 
     writeContract({
       address, abi: FLEXIBLE_POOL_ABI,
