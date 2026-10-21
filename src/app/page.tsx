@@ -7,6 +7,8 @@ import ChatWindow       from "@/components/chat/ChatWindow";
 import FundsDashboard   from "@/components/funds/FundsDashboard";
 import ContactsView     from "@/components/contacts/ContactsView";
 import SettingsView     from "@/components/settings/SettingsView";
+import AdminTrailView   from "@/components/admin/AdminTrailView";
+import WalletButton     from "@/components/wallet/WalletButton";
 import OnboardingScreen from "@/components/onboarding/OnboardingScreen";
 import CallModal, { type CallType } from "@/components/ui/CallModal";
 import { useConversations, useProfile } from "@/hooks/useSupabaseChat";
@@ -103,17 +105,14 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right side: user greeting + status + user avatar */}
+        {/* Right side: Wallet connect priority + user greeting + avatar */}
         <div className="flex items-center gap-3">
+          <WalletButton />
           {userDisplayName && (
             <span className="hidden md:block text-[11px] text-zinc-500">
               Hi, <span className="text-zinc-300 font-medium">{userDisplayName}</span>
             </span>
           )}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot" />
-            <span className="text-[10px] text-emerald-400 font-semibold">Online</span>
-          </div>
           {/* User avatar — opens Settings */}
           <button
             onClick={() => setActiveView("settings")}
@@ -124,6 +123,20 @@ export default function Home() {
           </button>
         </div>
       </header>
+
+      {/* ── Priority Alert: Wallet Not Connected ────────────────────────── */}
+      {!address && (
+        <div className="flex-shrink-0 px-4 py-2.5 bg-gradient-to-r from-red-500/15 via-orange-500/10 to-transparent border-b border-orange-500/30 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="text-base">⚠️</span>
+            <div>
+              <p className="text-xs font-semibold text-orange-400">Wallet connection required (Priority)</p>
+              <p className="text-[11px] text-zinc-400">Connect your Web3 wallet to sign on-chain transactions and hash pool actions on Avalanche Fuji.</p>
+            </div>
+          </div>
+          <WalletButton />
+        </div>
+      )}
 
       {/* ── Main layout ────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -138,6 +151,7 @@ export default function Home() {
           )}
           {activeView === "contacts" && <ContactsView />}
           {activeView === "funds"    && <FundsDashboard />}
+          {activeView === "admin"    && <AdminTrailView />}
           {activeView === "settings" && <SettingsView />}
         </div>
       </div>
