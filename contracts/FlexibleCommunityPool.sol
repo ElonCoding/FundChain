@@ -1,66 +1,40 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// ── Chainlink VRF v2.5 ──────────────────────────────────────────────────────
-// Install: npm install @chainlink/contracts
-import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import {VRFV2PlusClient}       from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-
 /**
  * @title  FlexibleCommunityPool
  * @author FundChain — Avalanche Speed Run Hackathon
  * @notice Production fund-pooling contract with:
  *         • EventPayout pools — creator transfers collected AVAX to any recipient
- *         • LuckyDraw pools   — Chainlink VRF v2.5 selects a verifiably-random winner
+ *         • LuckyDraw pools   — on-chain pseudo-randomness selects winner instantly
  *
  * Contribution modes
  * ──────────────────
  * Fixed    : every participant pays exactly `contributionAmount` wei.
  * Flexible : participant pays any value in [minContribution, maxContribution].
  *
- * Chainlink VRF v2.5 — Avalanche Fuji Testnet
- * ─────────────────────────────────────────────
- * Docs: https://docs.chain.link/vrf/v2-5/supported-networks#avalanche-fuji-testnet
+ * Randomness
+ * ──────────
+ * Uses block.prevrandao (EIP-4399) + block.timestamp + block.number + participant
+ * addresses to derive a winner index. No oracle, no subscription, no LINK needed.
+ * Suitable for hackathon / testnet deployments. For mainnet high-value draws,
+ * consider upgrading to Chainlink VRF.
  *
- * VRF Coordinator : 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE
- * Key Hash (500gwei gas lane):
- *                   0xc799bd1e3bd4d1a41cd4968997a4e68c9ec90699c33cc956b3b7e50c7a4f6af7
- * LINK Token       : 0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846
- *
- * HOW TO SET UP
- * 1. Create a VRF subscription at https://vrf.chain.link/fuji
- * 2. Fund it with at least 2 LINK
- * 3. Deploy this contract, passing your subscriptionId to the constructor
- * 4. Add the deployed contract address as a "consumer" in the VRF subscription UI
+ * Deploy on Remix
+ * ───────────────
+ * 1. Paste this file into Remix
+ * 2. Compiler: 0.8.20, Optimization ON (200 runs)
+ * 3. Environment: Injected Provider (MetaMask → Fuji)
+ * 4. Deploy — NO constructor args required
  */
-contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
-
-    /* ══════════════════════════════════════════════════════════════════
-       VRF v2.5 Config
-    ══════════════════════════════════════════════════════════════════ */
-
-    /// @dev Set at construction; cannot be changed after deployment.
-    uint256 public immutable s_subscriptionId;
-
-    /// @dev Avalanche Fuji 500-gwei gas lane key hash.
-    bytes32 public immutable s_keyHash;
-
-    /// @dev Number of block confirmations before the VRF response is accepted.
-    uint16  public constant  REQUEST_CONFIRMATIONS = 3;
-
-    /// @dev Gas limit for `fulfillRandomWords` callback.
-    ///      ~200 000 is safe for the winner-selection + AVAX transfer logic.
-    uint32  public constant  CALLBACK_GAS_LIMIT    = 200_000;
-
-    /// @dev We only need 1 random word per draw.
-    uint32  public constant  NUM_WORDS             = 1;
+contract FlexibleCommunityPool {
 
     /* ══════════════════════════════════════════════════════════════════
        Domain Enums & Structs
     ══════════════════════════════════════════════════════════════════ */
 
     enum PoolType   { EventPayout, LuckyDraw }
-    enum PoolStatus { Active, Completed, Cancelled, Withdrawn, PendingVRF }
+    enum PoolStatus { Active, Completed, Cancelled, Withdrawn }
 
     struct Pool {
         uint256    id;
@@ -87,7 +61,7 @@ contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
         uint256    deadline;            // 0 = no deadline
 
         PoolStatus status;
-        address    winner;             // set after VRF fulfillment
+        address    winner;             // set after lucky draw
     }
 
     struct Contribution {
@@ -109,12 +83,6 @@ contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
     mapping(uint256 => mapping(address => uint256))   public contributions;
     mapping(address => uint256[])                     public userPools;
     mapping(address => uint256[])                     public userContributions;
-
-    /// @dev VRF requestId → poolId (to process fulfillment)
-    mapping(uint256 => uint256) public vrfRequestToPool;
-
-    /// @dev poolId → VRF requestId (to surface in UI)
-    mapping(uint256 => uint256) public poolVrfRequest;
 
     Contribution[] public allContributions;
 
@@ -138,18 +106,10 @@ contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
         uint256          newTotal
     );
 
-    /// @notice Emitted when a VRF random-words request is submitted.
-    event WinnerDrawRequested(
-        uint256 indexed poolId,
-        uint256 indexed vrfRequestId
-    );
-
-    /// @notice Emitted when Chainlink VRF fulfills the request and a winner is chosen.
     event WinnerPicked(
         uint256 indexed poolId,
         address indexed winner,
-        uint256         prizeAmount,
-        uint256         vrfRequestId
+        uint256         prizeAmount
     );
 
     event PayoutExecuted(
@@ -195,23 +155,8 @@ contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
        Constructor
     ══════════════════════════════════════════════════════════════════ */
 
-    /**
-     * @param _vrfCoordinator  Chainlink VRF v2.5 coordinator address
-     *                         Fuji: 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE
-     * @param _subscriptionId  Your VRF subscription ID (from vrf.chain.link)
-     * @param _keyHash         Gas-lane key hash
-     *                         Fuji 500gwei: 0xc799bd1e3bd4d1a41cd4968997a4e68c9ec90699c33cc956b3b7e50c7a4f6af7
-     */
-    constructor(
-        address _vrfCoordinator,
-        uint256 _subscriptionId,
-        bytes32 _keyHash
-    )
-        VRFConsumerBaseV2Plus(_vrfCoordinator)
-    {
-        s_subscriptionId = _subscriptionId;
-        s_keyHash        = _keyHash;
-    }
+    /// @notice No constructor args — deploy directly from Remix with zero config.
+    constructor() {}
 
     /* ══════════════════════════════════════════════════════════════════
        Pool Creation
@@ -284,78 +229,55 @@ contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
     }
 
     /* ══════════════════════════════════════════════════════════════════
-       LuckyDraw — Chainlink VRF v2.5
+       LuckyDraw — On-chain Pseudo-randomness (no oracle)
     ══════════════════════════════════════════════════════════════════ */
 
     /**
-     * @notice Step 1 — Creator calls this to request randomness from Chainlink VRF.
-     *         The pool status is set to `PendingVRF`; funds are locked until fulfilled.
-     *         Costs LINK from the subscription. Call completes instantly; the callback
-     *         arrives in a separate transaction from the Chainlink oracle (~30-90 sec).
+     * @notice Instantly picks a winner using on-chain entropy.
+     *         Single transaction — no Chainlink VRF subscription or LINK required.
      *
-     * @dev    Requires the contract to be registered as a consumer in the VRF subscription.
+     * Entropy sources mixed into the winner hash:
+     *   • block.prevrandao  — validator-committed randomness beacon (EIP-4399)
+     *   • block.timestamp   — current block time
+     *   • block.number      — block height
+     *   • poolId            — pool identifier
+     *   • all participant addresses — makes front-running economically impractical
+     *                                 (attacker can't predict which address list)
+     *
+     * @dev    Only the pool creator can trigger the draw.
+     *         Pool must have ≥ 1 participant and > 0 AVAX collected.
      */
-    function requestWinnerDraw(uint256 _poolId)
+    function triggerLuckyDraw(uint256 _poolId)
         external
         poolExists(_poolId)
         onlyPoolCreator(_poolId)
-        returns (uint256 requestId)
     {
         Pool storage pool = pools[_poolId];
-        require(pool.poolType == PoolType.LuckyDraw,                     "FCP: not LuckyDraw");
+        require(pool.poolType == PoolType.LuckyDraw,                      "FCP: not LuckyDraw");
         require(pool.status   == PoolStatus.Active ||
-                pool.status   == PoolStatus.Completed,                   "FCP: invalid status");
-        require(pool.totalCollected > 0,                                 "FCP: no funds");
-        require(pool.participantCount > 0,                               "FCP: no participants");
-        require(pool.winner == address(0),                               "FCP: winner exists");
-        require(poolVrfRequest[_poolId] == 0,                           "FCP: draw in progress");
+                pool.status   == PoolStatus.Completed,                    "FCP: invalid status");
+        require(pool.totalCollected > 0,                                  "FCP: no funds");
+        require(pool.participantCount > 0,                                "FCP: no participants");
+        require(pool.winner == address(0),                                "FCP: winner exists");
 
-        // Lock pool while waiting for VRF
-        pool.status = PoolStatus.PendingVRF;
-        emit PoolStatusChanged(_poolId, PoolStatus.PendingVRF);
+        // ── Derive pseudo-random winner index ───────────────────────────────
+        // Pack all participants into the hash so the result depends on the exact
+        // membership state — not just publicly-known block data.
+        address[] memory participants = poolParticipants[_poolId];
 
-        // Submit VRF request — pay with subscription LINK (nativePayment = false)
-        requestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash:             s_keyHash,
-                subId:               s_subscriptionId,
-                requestConfirmations: REQUEST_CONFIRMATIONS,
-                callbackGasLimit:    CALLBACK_GAS_LIMIT,
-                numWords:            NUM_WORDS,
-                extraArgs:           VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({ nativePayment: false })
-                )
-            })
-        );
+        bytes32 seed = keccak256(abi.encodePacked(
+            block.prevrandao,        // EIP-4399 validator randomness beacon
+            block.timestamp,
+            block.number,
+            _poolId,
+            participants             // full list — harder to manipulate
+        ));
 
-        vrfRequestToPool[requestId] = _poolId;
-        poolVrfRequest[_poolId]     = requestId;
-
-        emit WinnerDrawRequested(_poolId, requestId);
-    }
-
-    /**
-     * @notice Step 2 — Chainlink oracle calls this after generating randomness.
-     *         Selects winner, transfers prize, emits `WinnerPicked`.
-     * @dev    Called only by the VRF coordinator (enforced by VRFConsumerBaseV2Plus).
-     */
-    function fulfillRandomWords(
-        uint256 _requestId,
-        uint256[] calldata _randomWords
-    ) internal override {
-        uint256 poolId = vrfRequestToPool[_requestId];
-        require(poolId < nextPoolId, "FCP: unknown request");
-
-        Pool storage pool = pools[poolId];
-        require(pool.status == PoolStatus.PendingVRF,  "FCP: not pending VRF");
-        require(pool.winner == address(0),             "FCP: winner already set");
-
-        // ── Verifiably-random winner index ──────────────────────────────────
-        uint256 winnerIdx = _randomWords[0] % pool.participantCount;
-        address winner    = poolParticipants[poolId][winnerIdx];
+        uint256 winnerIdx = uint256(seed) % pool.participantCount;
+        address winner    = participants[winnerIdx];
 
         // ── Transfer prize ───────────────────────────────────────────────────
-        uint256 prize = pool.totalCollected;
+        uint256 prize       = pool.totalCollected;
         pool.totalCollected = 0;
         pool.winner         = winner;
         pool.status         = PoolStatus.Withdrawn;
@@ -363,9 +285,9 @@ contract FlexibleCommunityPool is VRFConsumerBaseV2Plus {
         (bool ok, ) = payable(winner).call{value: prize}("");
         require(ok, "FCP: prize transfer failed");
 
-        emit WinnerPicked(poolId, winner, prize, _requestId);
-        emit PayoutExecuted(poolId, winner, prize, PoolType.LuckyDraw);
-        emit PoolStatusChanged(poolId, PoolStatus.Withdrawn);
+        emit WinnerPicked(_poolId, winner, prize);
+        emit PayoutExecuted(_poolId, winner, prize, PoolType.LuckyDraw);
+        emit PoolStatusChanged(_poolId, PoolStatus.Withdrawn);
     }
 
     /* ══════════════════════════════════════════════════════════════════
