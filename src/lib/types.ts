@@ -103,4 +103,4 @@ export interface PollOption {
 
 // ── Navigation ──
 
-export type ActiveView = "chats" | "contacts" | "funds" | "settings";
+export type ActiveView = "chats" | "contacts" | "funds" | "admin" | "settings";
