@@ -56,3 +56,13 @@ export function getInitials(name: string): string {
   const second = words[1] ? Array.from(words[1])[0] ?? "" : "";
   return (first + second).toUpperCase();
 }
+
+/** Format AVAX / fiat amounts with locale-aware separators */
+export function formatCurrency(value: number, symbol = "AVAX", decimals = 4): string {
+  return ${value.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} ;
+}
+
+/** Clamp a number between min and max */
+export function clamp(val: number, min: number, max: number): number {
+  return Math.min(Math.max(val, min), max);
+}
