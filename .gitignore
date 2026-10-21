@@ -23,6 +23,9 @@ contracts/.env
 
 # ─── Testing ─────────────────────────────────────────────────────────────────
 /coverage
+agent
+.agents
+.claude
 
 # ─── Environment files ───────────────────────────────────────────────────────
 # .env.example is intentionally NOT ignored (safe to commit as a template)
@@ -49,3 +52,6 @@ next-env.d.ts
 
 # ─── Vercel ──────────────────────────────────────────────────────────────────
 .vercel
+
+# ─── Unwanted ──────────────────────────────────────────────────────────────────
+skills-lock.json
