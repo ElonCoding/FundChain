@@ -207,6 +207,64 @@ export async function sendMessage(
   return data;
 }
 
+/**
+ * Start or get an existing private 1-on-1 conversation.
+ */
+export async function startPrivateConversation(
+  myProfileId: string,
+  targetProfileId: string,
+  targetDisplayName: string
+): Promise<string> {
+  try {
+    const { data: myParticipations } = await supabase
+      .from("conversation_participants")
+      .select("conversation_id")
+      .eq("profile_id", myProfileId);
+
+    if (myParticipations && myParticipations.length > 0) {
+      const convIds = myParticipations.map((p) => p.conversation_id);
+      const { data: common } = await (supabase
+        .from("conversation_participants") as any)
+        .select("conversation_id, conversations(type)")
+        .eq("profile_id", targetProfileId)
+        .in("conversation_id", convIds);
+
+      const privateConv = common?.find(
+        (c: any) => c.conversations && c.conversations.type === "private"
+      );
+
+      if (privateConv) {
+        return privateConv.conversation_id;
+      }
+    }
+  } catch (err) {
+    console.warn("[startPrivateConversation] lookup failed, creating new:", err);
+  }
+
+  // Otherwise, create a new conversation
+  const { data: newConv, error: convError } = await (supabase
+    .from("conversations") as any)
+    .insert({
+      type: "private",
+      name: targetDisplayName,
+      created_by: myProfileId,
+    })
+    .select("id")
+    .single();
+
+  if (convError || !newConv) {
+    throw new Error(`Failed to create conversation: ${convError?.message}`);
+  }
+
+  // Insert both participants
+  await (supabase.from("conversation_participants") as any).insert([
+    { conversation_id: newConv.id, profile_id: myProfileId, is_admin: true },
+    { conversation_id: newConv.id, profile_id: targetProfileId, is_admin: false },
+  ]);
+
+  return newConv.id;
+}
+
 /* ──────────────────────────────────────────────────────────
  *  Private helpers
  * ────────────────────────────────────────────────────────── */
@@ -215,3 +273,4 @@ function shortenForDisplay(address: string): string {
   if (address.length < 10) return address;
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
+

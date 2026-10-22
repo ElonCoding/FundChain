@@ -3,6 +3,7 @@
 import { useAccount } from "wagmi";
 import { cn } from "@/lib/utils";
 import type { ActiveView } from "@/lib/types";
+import FundChainLogo from "@/components/ui/FundChainLogo";
 
 interface SidebarNavProps {
   activeView:   ActiveView;
@@ -71,20 +72,16 @@ export default function SidebarNav({ activeView, onViewChange }: SidebarNavProps
 
   return (
     <nav
-      className="flex flex-col items-center w-[68px] bg-zinc-950 border-r border-zinc-800/50 py-3 gap-0.5 flex-shrink-0"
+      className="flex flex-col items-center w-[68px] bg-[#0A2E22] border-r border-slate-800 py-3 gap-0.5 flex-shrink-0"
       aria-label="Main navigation"
     >
       {/* ── App logo ──────────────────────────────────────────────────── */}
-      <div className="mb-5 flex items-center justify-center">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 via-orange-500 to-amber-400 shadow-lg shadow-orange-500/20 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] text-white">
-            <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </div>
+      <div className="mb-4 flex items-center justify-center">
+        <FundChainLogo size="sm" showWordmark={false} />
       </div>
 
       {/* ── Nav items ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-0.5 flex-1 w-full px-2">
+      <div className="flex flex-col gap-1 flex-1 w-full px-2">
         {NAV.map(({ view, label, icon }) => (
           <button
             key={view}
@@ -96,13 +93,13 @@ export default function SidebarNav({ activeView, onViewChange }: SidebarNavProps
             className={cn(
               "group relative flex flex-col items-center justify-center w-full h-12 rounded-xl transition-all duration-200",
               activeView === view
-                ? "bg-zinc-800 text-white"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40"
+                ? "bg-slate-900/90 text-emerald-400 border border-emerald-500/30 shadow-md shadow-emerald-500/10"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/40"
             )}
           >
             {/* Active indicator bar */}
             {activeView === view && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-gradient-to-b from-red-500 to-orange-500 rounded-r-full" />
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-gradient-to-b from-[#16A34A] to-[#6EE7B7] rounded-r-full" />
             )}
 
             {icon}

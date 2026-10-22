@@ -1,13 +1,15 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   useReadContract,
+  useReadContracts,
   useWriteContract,
   useWaitForTransactionReceipt,
   useAccount,
   useChainId,
 } from "wagmi";
-import { parseEther } from "viem";
+import { parseEther, formatEther } from "viem";
 import { FLEXIBLE_POOL_ABI } from "@/lib/contracts/flexibleAbi";
 import { avalancheFuji, avalancheMainnet, CONTRACT_ADDRESSES } from "@/lib/contracts/chains";
 
@@ -40,6 +42,89 @@ function useTxBundle() {
 export function usePoolCount() {
   const address = useContractAddress();
   return useReadContract({ address, abi: FLEXIBLE_POOL_ABI, functionName: "getPoolCount" });
+}
+
+export function useAllPools() {
+  const address = useContractAddress();
+  const { data: poolCount, isLoading: isCountLoading, refetch: refetchCount } = usePoolCount();
+
+  const count = poolCount ? Number(poolCount) : 0;
+  const contracts = useMemo(() => {
+    return Array.from({ length: count }, (_, i) => ({
+      address,
+      abi: FLEXIBLE_POOL_ABI,
+      functionName: "getPool" as const,
+      args: [BigInt(i)],
+    }));
+  }, [address, count]);
+
+  const { data: rawPools, isLoading: isPoolsLoading, refetch: refetchPools } = useReadContracts({
+    contracts,
+    query: {
+      enabled: count > 0,
+    },
+  });
+
+  const pools = useMemo(() => {
+    if (!rawPools) return [];
+    return rawPools
+      .map((r, idx) => {
+        if (r.status !== "success" || !r.result) return null;
+        const p: any = r.result;
+        return {
+          id: Number(p.id ?? idx),
+          creator: p.creator as string,
+          poolType: Number(p.poolType) === 1 ? ("luckydraw" as const) : ("event" as const),
+          title: p.title || `Pool #${idx}`,
+          description: p.description || "",
+          groupId: p.groupId as string,
+          contributionAmount: p.contributionAmount && p.contributionAmount > BigInt(0)
+            ? formatEther(p.contributionAmount) + " AVAX"
+            : "Flexible",
+          contributionWei: p.contributionAmount ?? BigInt(0),
+          minContributionWei: p.minContribution ?? BigInt(0),
+          maxContributionWei: p.maxContribution ?? BigInt(0),
+          recipientAddress: p.recipientAddress || "",
+          totalCollected: formatEther(p.totalCollected ?? BigInt(0)) + " AVAX",
+          totalCollectedWei: p.totalCollected ?? BigInt(0),
+          participantCount: Number(p.participantCount ?? 0),
+          createdAt: p.createdAt && Number(p.createdAt) > 0
+            ? new Date(Number(p.createdAt) * 1000).toISOString()
+            : new Date().toISOString(),
+          deadline: p.deadline && Number(p.deadline) > 0
+            ? new Date(Number(p.deadline) * 1000).toISOString()
+            : null,
+          status: (Number(p.status) === 1
+            ? "completed"
+            : Number(p.status) === 2
+            ? "cancelled"
+            : Number(p.status) === 3
+            ? "withdrawn"
+            : "active") as "active" | "completed" | "cancelled" | "withdrawn",
+          winner: p.winner && p.winner !== "0x0000000000000000000000000000000000000000" ? p.winner : null,
+          // Compatibility fields with MockPoolDisplay
+          creatorFull: p.creator,
+          goalAmount: p.contributionAmount && p.contributionAmount > BigInt(0)
+            ? (parseFloat(formatEther(p.contributionAmount)) * 10).toFixed(2) + " AVAX"
+            : "5.0 AVAX",
+          maxParticipants: 100,
+          contributionMode: p.contributionAmount && p.contributionAmount > BigInt(0) ? ("fixed" as const) : ("flexible" as const),
+          groupChatId: p.groupId || `chat-pool-${idx}`,
+          participants: [],
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+  }, [rawPools]);
+
+  return {
+    pools,
+    poolCount: count,
+    isLoading: isCountLoading || (count > 0 && isPoolsLoading),
+    refetch: () => {
+      refetchCount();
+      refetchPools();
+    },
+  };
 }
 
 export function usePool(poolId: bigint, enabled = true) {

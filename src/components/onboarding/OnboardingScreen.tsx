@@ -8,6 +8,7 @@ import {
   upsertProfileByPhone,
   SUPABASE_ENABLED,
 } from "@/lib/supabase";
+import FundChainLogo from "@/components/ui/FundChainLogo";
 
 /* ──────────────────────────────────────────────────────────
  *  Types
@@ -148,40 +149,42 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
     <div className="fixed inset-0 z-[100] bg-zinc-950 flex flex-col items-center justify-center overflow-hidden">
       {/* Ambient glow */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-red-500/8 via-orange-500/5 to-transparent blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-emerald-500/10 via-[#0A2E22]/30 to-transparent blur-3xl" />
       </div>
 
       {/* ── WELCOME ────────────────────────────────────────── */}
       {step === "welcome" && (
         <div className={stepCls}>
-          <div className="relative mb-8">
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-orange-500/30 to-red-500/20 blur-2xl scale-150" />
-            <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-red-500 via-orange-500 to-amber-400 flex items-center justify-center shadow-2xl shadow-orange-500/30">
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-12 h-12 text-white">
-                <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
+          <div className="relative mb-6">
+            <div className="absolute inset-0 rounded-full bg-emerald-500/20 blur-2xl scale-150" />
+            <FundChainLogo size="xl" showWordmark={false} />
           </div>
 
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">FundChain</h1>
-          <p className="text-zinc-400 text-sm leading-relaxed mb-2 max-w-[260px]">
-            Group payments, transparent fund pools, and real-time messaging.
-          </p>
-          <p className="text-zinc-600 text-xs mb-8">Powered by Avalanche &amp; Chainlink</p>
+          <div className="mb-2">
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">Fund<span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">Chain</span></h1>
+            <p className="text-xs uppercase tracking-widest text-emerald-400 font-semibold mt-1">People · Purpose · Progress</p>
+          </div>
 
-          <div className="flex flex-wrap gap-2 justify-center mb-10">
-            {["💬 Chat", "💰 Fund Pools", "🎲 Lucky Draw", "⚡ Instant"].map((f) => (
-              <span key={f} className="px-3 py-1.5 rounded-full bg-zinc-800/60 border border-zinc-700/40 text-xs text-zinc-400">{f}</span>
+          <p className="text-slate-300 text-sm leading-relaxed mb-2 max-w-[320px] font-medium">
+            Fund People. Build Communities. <span className="text-[#F97316] font-bold">Create Progress.</span>
+          </p>
+          <p className="text-slate-500 text-xs mb-8 max-w-[280px]">
+            Decentralized on-chain funding ecosystem on Avalanche Fuji.
+          </p>
+
+          <div className="flex flex-wrap gap-2 justify-center mb-8">
+            {["💬 On-Chain Chat", "💰 Group Vaults", "🎲 Lucky Draw", "⚡ Avalanche Fuji"].map((f) => (
+              <span key={f} className="px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">{f}</span>
             ))}
           </div>
 
           <button
             onClick={() => setStep("phone")}
-            className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-base hover:shadow-2xl hover:shadow-orange-500/30 active:scale-[0.98] transition-all"
+            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 text-slate-950 font-extrabold text-base hover:shadow-2xl hover:shadow-emerald-500/30 active:scale-[0.98] transition-all"
           >
             Get Started
           </button>
-          <p className="text-[11px] text-zinc-600 mt-4">No wallet required to start chatting</p>
+          <p className="text-[11px] text-slate-500 mt-4">Connect wallet anytime to sign &amp; contribute</p>
         </div>
       )}
 

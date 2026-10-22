@@ -15,6 +15,7 @@ import Avatar from "@/components/ui/Avatar";
 import { useConversations, useProfile } from "@/hooks/useSupabaseChat";
 import { SUPABASE_ENABLED } from "@/lib/supabase";
 import type { ConversationWithMeta } from "@/lib/database.types";
+import NewChatModal from "./NewChatModal";
 
 interface ChatListProps {
   selectedChatId: string | null;
@@ -157,6 +158,7 @@ export default function ChatList({ selectedChatId, onSelectChat }: ChatListProps
   const { address } = useAccount();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "groups" | "funds">("all");
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
 
   const { profile } = useProfile(address ?? null);
 
@@ -198,19 +200,20 @@ export default function ChatList({ selectedChatId, onSelectChat }: ChatListProps
   }, [conversations, search, filter, profile?.id]);
 
   return (
-    <div className="flex flex-col h-full bg-zinc-900/95 border-r border-zinc-800/60 w-[320px] flex-shrink-0">
+    <div className="flex flex-col h-full bg-[#0F172A] border-r border-slate-800 w-[320px] flex-shrink-0">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="px-4 pt-4 pb-3 flex-shrink-0">
+      <div className="px-4 pt-4 pb-3 flex-shrink-0 bg-gradient-to-b from-[#0A2E22]/30 to-transparent">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-[15px] font-bold text-white">Chats</h1>
+          <h1 className="text-[15px] font-bold text-white tracking-tight">Chats</h1>
           <div className="flex items-center gap-1.5">
             <button
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              onClick={() => setShowNewChatModal(true)}
+              className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 hover:text-white hover:bg-emerald-600 transition-all shadow-sm"
               aria-label="New chat"
               title="New direct message"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10h6"/>
               </svg>
             </button>
@@ -305,6 +308,17 @@ export default function ChatList({ selectedChatId, onSelectChat }: ChatListProps
           </div>
         )}
       </div>
+
+      {showNewChatModal && profile && (
+        <NewChatModal
+          currentProfileId={profile.id}
+          onClose={() => setShowNewChatModal(false)}
+          onSelectChat={(newId) => {
+            onSelectChat(newId);
+            setShowNewChatModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

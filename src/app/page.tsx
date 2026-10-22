@@ -14,6 +14,7 @@ import CallModal, { type CallType } from "@/components/ui/CallModal";
 import { useConversations, useProfile } from "@/hooks/useSupabaseChat";
 import { useAccount } from "wagmi";
 import type { ActiveView } from "@/lib/types";
+import FundChainLogo from "@/components/ui/FundChainLogo";
 
 const ONBOARDING_KEY = "fundchain_onboarding_done";
 
@@ -91,32 +92,22 @@ export default function Home() {
     <main className="flex flex-col h-screen w-screen bg-zinc-950 overflow-hidden">
 
       {/* ── App header ─────────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-zinc-950 border-b border-zinc-800/50">
-        {/* Brand wordmark */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-red-500 via-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25 flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-white">
-              <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <div className="leading-none">
-            <p className="text-[15px] font-bold text-white tracking-tight">FundChain</p>
-            <p className="text-[10px] text-zinc-500 mt-px">Messaging &amp; Group Funds</p>
-          </div>
-        </div>
+      <header className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-[#0F172A] border-b border-slate-800 bg-gradient-to-r from-[#0A2E22]/40 via-slate-900/60 to-[#0F172A]">
+        {/* Brand wordmark with official logo */}
+        <FundChainLogo size="md" />
 
         {/* Right side: Wallet connect priority + user greeting + avatar */}
         <div className="flex items-center gap-3">
           <WalletButton />
           {userDisplayName && (
-            <span className="hidden md:block text-[11px] text-zinc-500">
-              Hi, <span className="text-zinc-300 font-medium">{userDisplayName}</span>
+            <span className="hidden md:block text-[11px] text-slate-400">
+              Hi, <span className="text-emerald-300 font-semibold">{userDisplayName}</span>
             </span>
           )}
           {/* User avatar — opens Settings */}
           <button
             onClick={() => setActiveView("settings")}
-            className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-xs font-bold text-white hover:shadow-lg hover:shadow-orange-500/25 active:scale-95 transition-all"
+            className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-400 border border-emerald-400/30 flex items-center justify-center text-xs font-bold text-slate-950 hover:shadow-lg hover:shadow-emerald-500/25 active:scale-95 transition-all"
             title="Settings"
           >
             {userDisplayName ? userDisplayName.slice(0, 2).toUpperCase() : "?"}
@@ -126,12 +117,12 @@ export default function Home() {
 
       {/* ── Priority Alert: Wallet Not Connected ────────────────────────── */}
       {!address && (
-        <div className="flex-shrink-0 px-4 py-2.5 bg-gradient-to-r from-red-500/15 via-orange-500/10 to-transparent border-b border-orange-500/30 flex items-center justify-between">
+        <div className="flex-shrink-0 px-4 py-2.5 bg-gradient-to-r from-[#F97316]/15 via-orange-500/10 to-transparent border-b border-orange-500/30 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="text-base">⚠️</span>
             <div>
-              <p className="text-xs font-semibold text-orange-400">Wallet connection required (Priority)</p>
-              <p className="text-[11px] text-zinc-400">Connect your Web3 wallet to sign on-chain transactions and hash pool actions on Avalanche Fuji.</p>
+              <p className="text-xs font-semibold text-[#F97316]">Wallet connection required (Priority)</p>
+              <p className="text-[11px] text-slate-400">Connect your Web3 wallet to sign on-chain transactions and hash pool actions on Avalanche Fuji.</p>
             </div>
           </div>
           <WalletButton />
@@ -149,7 +140,14 @@ export default function Home() {
               {chatProps ? <ChatWindow {...chatProps} /> : <EmptyState onStartNew={() => conversations[0] && setActiveChatId(conversations[0].id)} />}
             </>
           )}
-          {activeView === "contacts" && <ContactsView />}
+          {activeView === "contacts" && (
+            <ContactsView
+              onStartChat={(convId) => {
+                setActiveChatId(convId);
+                setActiveView("chats");
+              }}
+            />
+          )}
           {activeView === "funds"    && <FundsDashboard />}
           {activeView === "admin"    && <AdminTrailView />}
           {activeView === "settings" && <SettingsView />}

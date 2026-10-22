@@ -4,26 +4,35 @@ import { useState, useEffect } from "react";
 import Avatar from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
 import { useAccount } from "wagmi";
-import { supabase } from "@/lib/supabase";
+import { supabase, startPrivateConversation } from "@/lib/supabase";
 import { useProfile } from "@/hooks/useSupabaseChat";
 import type { Contact } from "@/lib/types";
+import AddContactModal from "./AddContactModal";
+import SendAvaxModal from "./SendAvaxModal";
 
-export default function ContactsView() {
-  const { address }       = useAccount();
-  const { profile }       = useProfile(address ?? null);
-  const [contacts,   setContacts]   = useState<Contact[]>([]);
-  const [isLoading,  setIsLoading]  = useState(true);
-  const [error,      setError]      = useState<string | null>(null);
-  const [search,     setSearch]     = useState("");
-  const [selected,   setSelected]   = useState<Contact | null>(null);
+interface ContactsViewProps {
+  onStartChat?: (conversationId: string) => void;
+}
 
-  // Fetch all other profiles from Supabase
+export default function ContactsView({ onStartChat }: ContactsViewProps) {
+  const { address } = useAccount();
+  const { profile } = useProfile(address ?? null);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Contact | null>(null);
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showSendAvaxModal, setShowSendAvaxModal] = useState(false);
+  const [isStartingChat, setIsStartingChat] = useState(false);
+
+  // Fetch profiles from Supabase
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
 
     (async () => {
-      // Build query — exclude current user if signed in
       const baseQuery = supabase
         .from("profiles")
         .select("id, wallet_address, display_name, avatar_url, status")
@@ -39,21 +48,46 @@ export default function ContactsView() {
       if (err) {
         setError(err.message);
       } else {
-        setContacts(
-          ((data ?? []) as { id: string; wallet_address: string; display_name: string; avatar_url: string | null; status: string }[]).map((r) => ({
-            id:             r.id,
-            wallet_address: r.wallet_address,
-            display_name:   r.display_name,
-            avatar_url:     r.avatar_url,
-            status:         r.status as Contact["status"],
-          }))
-        );
+        const mapped = ((data ?? []) as any[]).map((r) => ({
+          id: r.id,
+          wallet_address: r.wallet_address,
+          display_name: r.display_name,
+          avatar_url: r.avatar_url,
+          status: r.status as Contact["status"],
+        }));
+        setContacts(mapped);
+        if (mapped.length > 0 && !selected) {
+          setSelected(mapped[0]);
+        }
       }
       setIsLoading(false);
     })();
 
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  async function handleSendMessage(target: Contact) {
+    if (!profile) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+    setIsStartingChat(true);
+    try {
+      const convId = await startPrivateConversation(
+        profile.id,
+        target.id,
+        target.display_name
+      );
+      if (onStartChat) {
+        onStartChat(convId);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Could not start conversation: " + (err?.message || "Unknown error"));
+    } finally {
+      setIsStartingChat(false);
+    }
+  }
 
   const filtered = contacts.filter((c) =>
     c.display_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -64,233 +98,256 @@ export default function ContactsView() {
 
   return (
     <div className="flex h-full flex-1 overflow-hidden">
-
       {/* ── Contact list ────────────────────────────────────────────────── */}
       <div className={cn(
-        "flex flex-col h-full bg-zinc-900/95 border-r border-zinc-800/60 flex-shrink-0 transition-all duration-300",
+        "flex flex-col h-full bg-[#0F172A] border-r border-slate-800 flex-shrink-0 transition-all duration-300",
         selected ? "w-[320px]" : "flex-1 max-w-none"
       )}>
         {/* Header */}
-        <div className="px-5 pt-5 pb-3 flex-shrink-0 border-b border-zinc-800/50">
+        <div className="px-5 pt-5 pb-3 flex-shrink-0 border-b border-slate-800/80 bg-gradient-to-b from-[#0A2E22]/30 to-transparent">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h1 className="text-[15px] font-bold text-white tracking-tight">People</h1>
-              <p className="text-[11px] text-zinc-500 mt-0.5">{isLoading ? "Loading…" : `${contacts.length} contacts`}</p>
+              <h1 className="text-[15px] font-bold text-white tracking-tight">People &amp; Network</h1>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {isLoading ? "Loading…" : `${contacts.length} members`}
+              </p>
             </div>
-            <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800/70 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white hover:border-zinc-600 transition-all">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 hover:text-white transition-all shadow-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" />
               </svg>
-              Add
+              Add Member
             </button>
           </div>
           {/* Search */}
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
             </svg>
             <input
               type="text"
-              placeholder="Search contacts…"
+              placeholder="Search by name or wallet address…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-zinc-800/60 border border-zinc-700/40 rounded-xl pl-8 pr-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-orange-500/40 transition-all"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all"
             />
           </div>
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto py-2 scrollbar-thin scrollbar-thumb-zinc-800">
-          {/* Error state */}
-          {error && (
-            <div className="mx-4 my-3 px-3 py-2 rounded-lg bg-red-500/8 border border-red-500/20">
-              <p className="text-[11px] text-red-400 font-medium">Failed to load contacts</p>
-              <p className="text-[10px] text-zinc-500 mt-0.5">{error}</p>
+        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin">
+          {isLoading && (
+            <div className="p-8 text-center text-xs text-slate-500">Loading contacts…</div>
+          )}
+
+          {!isLoading && filtered.length === 0 && (
+            <div className="p-8 text-center text-xs text-slate-500">
+              No contacts found. Click &quot;Add Member&quot; to add someone!
             </div>
           )}
-          {/* Loading skeletons */}
-          {isLoading && (
-            <div className="px-4 space-y-1 py-2">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-xl">
-                  <div className="w-8 h-8 rounded-full skeleton flex-shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3 skeleton rounded-full w-2/3" />
-                    <div className="h-2 skeleton rounded-full w-1/2" />
-                  </div>
-                </div>
+
+          {online.length > 0 && (
+            <div>
+              <p className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                Online — {online.length}
+              </p>
+              {online.map((c) => (
+                <ContactRow
+                  key={c.id}
+                  contact={c}
+                  isSelected={selected?.id === c.id}
+                  onClick={() => setSelected(c)}
+                />
               ))}
             </div>
           )}
-          {!isLoading && online.length > 0 && (
-            <div className="px-4 mb-3">
-              <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold mb-1.5 px-1">
-                Online · {online.length}
+
+          {others.length > 0 && (
+            <div>
+              <p className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                Offline — {others.length}
               </p>
-              <div className="space-y-0.5">
-                {online.map((c) => (
-                  <ContactRow key={c.id} contact={c} isSelected={selected?.id === c.id} onClick={() => setSelected(c)} />
-                ))}
-              </div>
-            </div>
-          )}
-          {!isLoading && others.length > 0 && (
-            <div className="px-4">
-              <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold mb-1.5 px-1">
-                Other · {others.length}
-              </p>
-              <div className="space-y-0.5">
-                {others.map((c) => (
-                  <ContactRow key={c.id} contact={c} isSelected={selected?.id === c.id} onClick={() => setSelected(c)} />
-                ))}
-              </div>
-            </div>
-          )}
-          {!isLoading && filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
-              <p className="text-sm">{search ? "No contacts match" : "No contacts yet"}</p>
-              <p className="text-xs text-zinc-600 mt-1">
-                {search ? "Try a different search term" : "Other users appear here once they connect"}
-              </p>
+              {others.map((c) => (
+                <ContactRow
+                  key={c.id}
+                  contact={c}
+                  isSelected={selected?.id === c.id}
+                  onClick={() => setSelected(c)}
+                />
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* ── Contact detail pane ──────────────────────────────────────────── */}
+      {/* ── Contact detail panel ────────────────────────────────────────── */}
       {selected ? (
-        <ContactDetail contact={selected} onClose={() => setSelected(null)} />
+        <ContactDetail
+          contact={selected}
+          onClose={() => setSelected(null)}
+          onSendMessage={() => handleSendMessage(selected)}
+          onSendAvax={() => setShowSendAvaxModal(true)}
+          isStartingChat={isStartingChat}
+        />
       ) : (
         <ContactDetailEmpty />
       )}
+
+      {/* Add Contact Modal */}
+      {showAddModal && (
+        <AddContactModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={(newC) => {
+            setContacts((prev) => [newC, ...prev]);
+            setSelected(newC);
+          }}
+        />
+      )}
+
+      {/* Send AVAX Modal */}
+      {showSendAvaxModal && selected && (
+        <SendAvaxModal
+          recipientAddress={selected.wallet_address}
+          recipientName={selected.display_name}
+          onClose={() => setShowSendAvaxModal(false)}
+        />
+      )}
     </div>
   );
 }
 
-/* ── Contact row item ───────────────────────────────────────────────────── */
-function ContactRow({ contact, isSelected, onClick }: { contact: Contact; isSelected: boolean; onClick: () => void }) {
+function ContactRow({
+  contact,
+  isSelected,
+  onClick,
+}: {
+  contact: Contact;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
       onClick={onClick}
-      onKeyDown={(e) => e.key === "Enter" && onClick()}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group cursor-pointer",
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all text-left",
         isSelected
-          ? "bg-zinc-800 border border-zinc-700/50"
-          : "hover:bg-zinc-800/40 border border-transparent"
+          ? "bg-slate-800/90 border border-emerald-500/30 text-white shadow-sm"
+          : "hover:bg-slate-800/40 text-slate-300"
       )}
     >
-      <Avatar name={contact.display_name} size="sm" status={contact.status} />
+      <div className="relative flex-shrink-0">
+        <Avatar name={contact.display_name} size="md" />
+        <span
+          className={cn(
+            "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-slate-900",
+            contact.status === "online" ? "bg-emerald-400" : "bg-slate-600"
+          )}
+        />
+      </div>
       <div className="flex-1 min-w-0">
-        <p className={cn("text-sm font-medium truncate transition-colors", isSelected ? "text-white" : "text-zinc-300 group-hover:text-white")}>
-          {contact.display_name}
+        <p className="text-xs font-semibold text-white truncate">{contact.display_name}</p>
+        <p className="text-[10px] font-mono text-slate-500 truncate mt-0.5">
+          {contact.wallet_address}
         </p>
-        <p className="text-[10px] text-zinc-600 font-mono truncate">{contact.wallet_address}</p>
       </div>
-      {/* Hover action icons */}
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => e.stopPropagation()}
-          title="Message"
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 transition-colors"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
-        <button
-          onClick={(e) => e.stopPropagation()}
-          title="Send AVAX"
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 transition-colors"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-            <circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/>
-          </svg>
-        </button>
-      </div>
-      {isSelected && (
-        <span className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0" />
-      )}
-    </div>
+    </button>
   );
 }
 
-/* ── Contact detail panel ───────────────────────────────────────────────── */
-function ContactDetail({ contact, onClose }: { contact: Contact; onClose: () => void }) {
-  const statusColors = {
-    online:  { dot: "bg-emerald-400", label: "Online",      badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-    away:    { dot: "bg-amber-400",   label: "Away",        badge: "bg-amber-500/10 text-amber-400 border-amber-500/20"       },
-    offline: { dot: "bg-zinc-600",    label: "Last seen recently", badge: "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"  },
-  };
-  const s = statusColors[contact.status];
-
+function ContactDetail({
+  contact,
+  onClose,
+  onSendMessage,
+  onSendAvax,
+  isStartingChat,
+}: {
+  contact: Contact;
+  onClose: () => void;
+  onSendMessage: () => void;
+  onSendAvax: () => void;
+  isStartingChat: boolean;
+}) {
   return (
-    <div className="flex flex-col flex-1 bg-zinc-900 animate-in fade-in duration-200 overflow-hidden">
+    <div className="flex flex-col flex-1 h-full bg-[#0F172A] overflow-hidden">
       {/* Top action bar */}
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-zinc-800/60">
-        <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" aria-label="Close">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
+      <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Member Details</h2>
+        <button
+          onClick={onClose}
+          className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-all"
+        >
+          ✕
         </button>
-        <p className="text-sm font-semibold text-white">Contact Info</p>
-        <div className="ml-auto flex gap-1.5">
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Voice call">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6 6l.87-.87a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7a2 2 0 0 1 1.72 2.02z"/></svg>
-          </button>
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Message">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </button>
-        </div>
       </div>
 
-      {/* Profile hero */}
-      <div className="flex flex-col items-center pt-10 pb-8 px-8 border-b border-zinc-800/50">
-        <div className="relative mb-4">
+      {/* Hero */}
+      <div className="flex flex-col items-center pt-8 pb-6 px-8 border-b border-slate-800 bg-gradient-to-b from-[#0A2E22]/20 to-transparent">
+        <div className="relative mb-3">
           <Avatar name={contact.display_name} size="xl" />
-          <span className={cn("absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-zinc-900", s.dot)} />
+          <span
+            className={cn(
+              "absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-[#0F172A]",
+              contact.status === "online" ? "bg-emerald-400" : "bg-slate-600"
+            )}
+          />
         </div>
         <h2 className="text-xl font-bold text-white tracking-tight">{contact.display_name}</h2>
-        <span className={cn("mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border", s.badge)}>
-          {s.label}
+        <span className="mt-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-500/10 border-emerald-500/30 text-emerald-400">
+          {contact.status === "online" ? "● Active Now" : "○ Offline"}
         </span>
       </div>
 
-      {/* Details */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-3">
-        <InfoRow icon="💳" label="Wallet" value={contact.wallet_address} mono />
-        <InfoRow icon="🔗" label="Explorer" value="View on SnowTrace →" link={`https://snowtrace.io/address/${contact.wallet_address}`} />
-        <InfoRow icon="🌐" label="Network" value="Avalanche C-Chain" />
+      {/* Info fields */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
+        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Wallet Address</p>
+          <p className="text-xs font-mono text-emerald-400 mt-1 break-all select-all">
+            {contact.wallet_address}
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Network</p>
+            <p className="text-xs text-white font-medium mt-0.5">Avalanche Fuji C-Chain</p>
+          </div>
+          <span className="text-sm">🔺</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">SnowTrace Verification</p>
+            <a
+              href={`https://testnet.snowtrace.io/address/${contact.wallet_address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-teal-400 hover:underline mt-0.5 block"
+            >
+              View on Block Explorer →
+            </a>
+          </div>
+          <span className="text-sm">🔗</span>
+        </div>
       </div>
 
-      {/* CTA */}
-      <div className="px-5 pb-5 flex gap-2">
-        <button className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 transition-all">
-          Send Message
+      {/* Action buttons */}
+      <div className="p-6 border-t border-slate-800 flex gap-3 bg-slate-950/40">
+        <button
+          onClick={onSendMessage}
+          disabled={isStartingChat}
+          className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 text-slate-950 font-bold text-xs hover:shadow-lg hover:shadow-emerald-500/20 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
+        >
+          💬 {isStartingChat ? "Opening Chat…" : "Send Message"}
         </button>
-        <button className="flex-1 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700/40 text-zinc-300 text-sm font-medium hover:text-white hover:border-zinc-600 transition-all">
-          Send AVAX
+        <button
+          onClick={onSendAvax}
+          className="flex-1 py-3 rounded-2xl bg-slate-800 border border-slate-700/60 text-white font-bold text-xs hover:bg-slate-700 hover:border-orange-500/40 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+        >
+          🔺 Send AVAX
         </button>
-      </div>
-    </div>
-  );
-}
-
-function InfoRow({ icon, label, value, mono, link }: { icon: string; label: string; value: string; mono?: boolean; link?: string }) {
-  return (
-    <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-zinc-800/40 border border-zinc-700/30">
-      <span className="text-base mt-px">{icon}</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">{label}</p>
-        {link ? (
-          <a href={link} target="_blank" rel="noopener noreferrer" className={cn("text-xs text-orange-400 hover:text-orange-300 transition-colors mt-0.5 block", mono && "font-mono break-all")}>
-            {value}
-          </a>
-        ) : (
-          <p className={cn("text-xs text-zinc-200 mt-0.5 break-all", mono && "font-mono")}>{value}</p>
-        )}
       </div>
     </div>
   );
@@ -298,15 +355,12 @@ function InfoRow({ icon, label, value, mono, link }: { icon: string; label: stri
 
 function ContactDetailEmpty() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-900 text-center px-8 select-none">
-      <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 flex items-center justify-center mb-4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-zinc-600">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-        </svg>
+    <div className="flex flex-col flex-1 items-center justify-center bg-[#0F172A] text-center px-8 select-none">
+      <div className="w-16 h-16 rounded-2xl bg-slate-800/50 flex items-center justify-center mb-4 text-2xl">
+        👥
       </div>
-      <p className="text-sm font-semibold text-zinc-400">Select a contact</p>
-      <p className="text-xs text-zinc-600 mt-1">Click anyone to view their profile</p>
+      <p className="text-sm font-semibold text-slate-300">Select a member</p>
+      <p className="text-xs text-slate-500 mt-1">Click any member to view details or start a chat</p>
     </div>
   );
 }
