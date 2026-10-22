@@ -68,7 +68,11 @@ jobs:
       - name: Verify Contract Addresses & ABIs
         run: |
           node -e "
-            const abis = require('./src/lib/contracts/flexibleAbi.ts');
-            const chains = require('./src/lib/contracts/chains.ts');
+            const fs = require('fs');
+            const abi = fs.readFileSync('./src/lib/contracts/flexibleAbi.ts', 'utf8');
+            const chains = fs.readFileSync('./src/lib/contracts/chains.ts', 'utf8');
+            if (!abi.includes('FLEXIBLE_POOL_ABI') || !chains.includes('CONTRACT_ADDRESSES')) {
+              throw new Error('Contract definitions missing');
+            }
             console.log('Contract configuration verified successfully.');
           "
