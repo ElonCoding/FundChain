@@ -90,6 +90,91 @@ flowchart TD
     RealtimeHooks -->|Profile & Message Storage| Postgres
 ```
 
+### Internal Application Architecture
+
+```mermaid
+flowchart TD
+    subgraph Pages ["Next.js App Router (src/app)"]
+        Home["/page.tsx\nLanding & Pool List"]
+        Audit["/audit/page.tsx\nAudit Trail Ledger"]
+        People["/people/page.tsx\nMember Directory"]
+        Chat["/chat/page.tsx\nWeb3 Messaging"]
+    end
+
+    subgraph Components ["UI Component Layer (src/components)"]
+        PoolCard[PoolCard\nPool Summary Card]
+        CreatePoolModal[CreatePoolModal\nPool Creation Form]
+        ContributeModal[ContributeModal\nPayment Handler]
+        AuditTable[AuditTable\nOn-Chain Ledger]
+        ChatWindow[ChatWindow\nRealtime Messages]
+        PeoplePanel[PeoplePanel\nContact Directory]
+    end
+
+    subgraph Hooks ["Custom Hooks (src/hooks)"]
+        useFlexiblePool[useFlexiblePool\nContract multicall reads]
+        useSupabaseRealtime[useSupabaseRealtime\nCDC subscriptions]
+        useWallet[useWallet\nWagmi wallet state]
+    end
+
+    subgraph Lib ["Library Layer (src/lib)"]
+        supabaseClient[supabase.ts\nTyped client + RLS]
+        wagmiConfig[wagmi.ts\nChain + transport config]
+        contractABI[abi/FlexiblePool.ts\nSolidity ABI]
+    end
+
+    Pages --> Components
+    Components --> Hooks
+    Hooks --> Lib
+    Lib -->|Reads & Writes| BC[(Avalanche Fuji\nFlexibleCommunityPool)]
+    Lib -->|Realtime + Auth| DB[(Supabase\nPostgreSQL)]
+```
+
+### Database Architecture
+
+```mermaid
+erDiagram
+    PROFILES {
+        uuid id PK
+        text wallet_address UK
+        text display_name
+        text avatar_url
+        boolean is_online
+        timestamptz last_seen
+        timestamptz created_at
+    }
+
+    CONVERSATIONS {
+        uuid id PK
+        uuid participant_a FK
+        uuid participant_b FK
+        timestamptz created_at
+        timestamptz last_message_at
+    }
+
+    MESSAGES {
+        uuid id PK
+        uuid conversation_id FK
+        uuid sender_id FK
+        text content
+        text tx_hash
+        timestamptz created_at
+    }
+
+    CONTACTS {
+        uuid id PK
+        uuid owner_id FK
+        text contact_wallet
+        text contact_name
+        timestamptz added_at
+    }
+
+    PROFILES ||--o{ CONVERSATIONS : "participant_a"
+    PROFILES ||--o{ CONVERSATIONS : "participant_b"
+    PROFILES ||--o{ MESSAGES : "sends"
+    CONVERSATIONS ||--o{ MESSAGES : "contains"
+    PROFILES ||--o{ CONTACTS : "owns"
+```
+
 ---
 
 ## 📜 Smart Contracts
