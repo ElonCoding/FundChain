@@ -163,10 +163,10 @@ npm install
 ### 2. Configure Environment Variables
 Create a `.env.local` file in the root directory:
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://ukpvvhiowiexswzlmepr.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=c303107085cb2bbcd1d184ebaa964f7a
-NEXT_PUBLIC_FLEXIBLE_POOL_ADDRESS=0x54A39697E45a7dC7d6DC7e43B3cDAF8Cd71cBC43
+NEXT_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<your-walletconnect-project-id>
+NEXT_PUBLIC_FLEXIBLE_POOL_ADDRESS=<your-deployed-contract-address>
 ```
 
 ### 3. Run Locally
