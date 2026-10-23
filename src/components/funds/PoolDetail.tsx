@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useAccount } from "wagmi";
+import { useState, useEffect, useCallback } from "react";
+import { useAccount, useChainId, useWaitForTransactionReceipt } from "wagmi";
+import { parseEther } from "viem";
 import { cn } from "@/lib/utils";
 import type { MockPoolDisplay } from "@/lib/mock-data";
 import { getExplorerTxUrl } from "@/lib/contracts/chains";
@@ -9,6 +10,8 @@ import ConnectWalletModal from "@/components/ui/ConnectWalletModal";
 import { useWalletGate } from "@/hooks/useWalletGate";
 import LuckyDrawPanel from "./LuckyDrawPanel";
 import AdminPayoutButton from "./AdminPayoutButton";
+import { useContribute } from "@/hooks/useFlexiblePool";
+import { recordPoolContribution, getPoolMembers, SUPABASE_ENABLED } from "@/lib/supabase";
 
 interface PoolDetailProps {
   pool: MockPoolDisplay;
@@ -17,31 +20,137 @@ interface PoolDetailProps {
 
 type TxState = "idle" | "pending" | "confirming" | "success" | "error";
 
-export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
-  const { isConnected, address, chainId } = useAccount();
-  const [txState, setTxState]     = useState<TxState>("idle");
-  const [txHash, setTxHash]       = useState<string | null>(null);
-  const [errorMsg, setErrorMsg]   = useState<string | null>(null);
-  const [customAmt, setCustomAmt] = useState("");
+interface Participant {
+  address: string;
+  name: string;
+  amount: string;
+  txHash: string;
+}
 
-  /* ── Core contribute transaction ─────────────────────────── */
-  const doContribute = useCallback(async () => {
-    setTxState("pending");
-    setErrorMsg(null);
-    try {
-      await new Promise((r) => setTimeout(r, 1200));
-      setTxState("confirming");
-      await new Promise((r) => setTimeout(r, 2000));
-      const hash = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-      setTxHash(hash);
+export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
+  const { isConnected, address } = useAccount();
+  const chainId = useChainId();
+  const [txState,    setTxState]    = useState<TxState>("idle");
+  const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
+  const [customAmt,  setCustomAmt]  = useState("");
+  const [members,    setMembers]    = useState<Participant[]>(pool.participants ?? []);
+
+  /* ── Derive numeric pool ID (strip prefix from FundsDashboard) ───── */
+  const rawPoolId = String(pool.id).replace(/^(chain-|mock-)/, "");
+  const numericPoolId = isNaN(Number(rawPoolId)) ? 0 : Number(rawPoolId);
+  const isMockPool = String(pool.id).startsWith("mock-");
+
+  /* ── Real wagmi write hook ────────────────────────────────────────── */
+  const { contribute, hash, isPending, isConfirming, isSuccess, error: writeError, reset } = useContribute();
+
+  /* ── Wait for tx receipt ─────────────────────────────────────────── */
+  const { isLoading: isReceiptLoading } = useWaitForTransactionReceipt({
+    hash,
+    query: { enabled: !!hash },
+  });
+
+  /* ── Sync wagmi states → local TxState ───────────────────────────── */
+  useEffect(() => {
+    if (isPending)       setTxState("pending");
+    if (isConfirming || isReceiptLoading) setTxState("confirming");
+    if (isSuccess && hash) {
       setTxState("success");
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : "Transaction failed");
+      const amountStr = pool.contributionMode === "flexible"
+        ? (customAmt || "0") + " AVAX"
+        : pool.contributionAmount;
+      const amountWei = pool.contributionMode === "flexible"
+        ? (parseEther(customAmt || "0")).toString()
+        : pool.contributionWei?.toString() ?? "0";
+
+      // Instantly show user in contributors ledger
+      if (address) {
+        setMembers((prev) => {
+          const exists = prev.some((m) => m.address.toLowerCase() === address.toLowerCase());
+          if (exists) return prev;
+          return [
+            ...prev,
+            {
+              address,
+              name: "You",
+              amount: amountStr,
+              txHash: hash,
+            },
+          ];
+        });
+      }
+
+      // Save to Supabase backend
+      if (SUPABASE_ENABLED && address) {
+        recordPoolContribution({
+          poolId:        numericPoolId,
+          walletAddress: address,
+          amountWei,
+          txHash:        hash,
+          chainId:       chainId ?? 43113,
+        }).then(() => loadMembers());
+      }
+    }
+    if (writeError) {
+      // User rejected or tx failed
+      const msg = (writeError as Error).message?.includes("User rejected")
+        ? "Transaction rejected in wallet."
+        : (writeError as Error).message ?? "Transaction failed";
+      setErrorMsg(msg);
       setTxState("error");
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPending, isConfirming, isReceiptLoading, isSuccess, writeError, hash]);
 
-  /* ── Wallet gate — opens modal if not connected ──────────── */
+  /* ── Load pool members from Supabase ─────────────────────────────── */
+  const loadMembers = useCallback(async () => {
+    if (!isMockPool && SUPABASE_ENABLED) {
+      const data = await getPoolMembers(numericPoolId);
+      if (data.length > 0) setMembers(data);
+    }
+  }, [isMockPool, numericPoolId]);
+
+  useEffect(() => { loadMembers(); }, [loadMembers]);
+
+  /* ── Core contribute action ───────────────────────────────────────── */
+  const doContribute = useCallback(() => {
+    setErrorMsg(null);
+    if (isMockPool && !isConnected) {
+      // Mock pool: simulate for demo when no wallet
+      setTxState("pending");
+      setTimeout(() => setTxState("confirming"), 1000);
+      setTimeout(() => {
+        const fakeHash = ("0x" + Array.from({ length: 64 }, () =>
+          Math.floor(Math.random() * 16).toString(16)).join("")) as `0x${string}`;
+        setTxState("success");
+        setMembers((prev) => [
+          ...prev,
+          {
+            address: address ?? "0x0000",
+            name: "You",
+            amount: pool.contributionMode === "flexible"
+              ? (customAmt || "0") + " AVAX"
+              : pool.contributionAmount,
+            txHash: fakeHash,
+          },
+        ]);
+      }, 2800);
+      return;
+    }
+
+    // Real on-chain tx
+    const amountWei = pool.contributionMode === "flexible"
+      ? parseEther(customAmt || "0")
+      : pool.contributionWei ?? BigInt(0);
+
+    if (amountWei <= BigInt(0)) {
+      setErrorMsg("Enter a valid AVAX amount.");
+      return;
+    }
+
+    contribute(BigInt(numericPoolId), amountWei);
+  }, [isMockPool, pool, customAmt, contribute, numericPoolId, address]);
+
+  /* ── Wallet gate ─────────────────────────────────────────────────── */
   const gate = useWalletGate(doContribute);
 
   const goalNum   = parseFloat(pool.goalAmount);
@@ -50,30 +159,40 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
   const isActive  = pool.status === "active";
   const isFlexible = pool.contributionMode === "flexible";
 
-  // Determine if connected wallet is the creator
   const isCreator = !!address &&
-    pool.creatorFull.toLowerCase() === address.toLowerCase();
+    pool.creatorFull?.toLowerCase() === address.toLowerCase();
 
-  async function handleContribute() {
-    gate.requireWallet();
+  function handleContribute() {
+    if (!isConnected) { gate.requireWallet(); return; }
+    if (isFlexible && !customAmt) { setErrorMsg("Enter an amount."); return; }
+    doContribute();
   }
 
-  // Pool type badge config
+  function handleRetry() {
+    reset?.();
+    setTxState("idle");
+    setErrorMsg(null);
+  }
+
   const poolTypeBadge = pool.poolType === "luckydraw"
-    ? { label: "🎲 Lucky Draw", cls: "bg-violet-500/15 text-violet-400 border-violet-500/30" }
-    : { label: "🎯 Event Payout", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" };
+    ? { label: "🎲 Lucky Draw",  cls: "bg-violet-500/15 text-violet-400 border-violet-500/30" }
+    : { label: "🎯 Event Payout", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30"   };
 
   const statusBadge = {
     active:    { label: "● Active",    cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-    completed: { label: "● Completed", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-    cancelled: { label: "○ Cancelled", cls: "bg-zinc-700/50 text-zinc-500 border-zinc-600/30" },
-    withdrawn: { label: "✓ Withdrawn", cls: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+    completed: { label: "● Completed", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30"         },
+    cancelled: { label: "○ Cancelled", cls: "bg-zinc-700/50 text-zinc-500 border-zinc-600/30"          },
+    withdrawn: { label: "✓ Withdrawn", cls: "bg-orange-500/15 text-orange-400 border-orange-500/30"   },
   }[pool.status];
+
+  const explorerBase = (chainId === 43114)
+    ? "https://snowtrace.io"
+    : "https://testnet.snowtrace.io";
 
   return (
     <div className="flex flex-col h-full flex-1 bg-zinc-900 animate-in slide-in-from-right-5 duration-300 overflow-hidden">
 
-      {/* ── Header ───────────────────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="flex items-center gap-3 px-5 py-3.5 border-b border-zinc-800/60 bg-zinc-900/95 backdrop-blur-xl flex-shrink-0">
         <button
           onClick={onClose}
@@ -94,11 +213,16 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
             <span className={cn("px-1.5 py-0.5 rounded-md text-[9px] font-bold border", statusBadge.cls)}>
               {statusBadge.label}
             </span>
+            {isMockPool && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold border bg-zinc-700/30 text-zinc-500 border-zinc-600/20">
+                Demo
+              </span>
+            )}
           </div>
         </div>
 
         <a
-          href={`https://snowtrace.io/address/${pool.creatorFull}`}
+          href={`${explorerBase}/address/${pool.creatorFull}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-[11px] text-zinc-400 hover:text-white hover:border-zinc-600 transition-all flex-shrink-0"
@@ -110,10 +234,9 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
         </a>
       </header>
 
-      {/* ── Scrollable body ───────────────────────────────────────────────── */}
+      {/* ── Scrollable body ────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
 
-        {/* Description */}
         <p className="text-sm text-zinc-400 leading-relaxed">{pool.description}</p>
 
         {/* Progress card */}
@@ -137,12 +260,8 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
                 "absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-out",
                 pool.poolType === "luckydraw"
                   ? "bg-gradient-to-r from-violet-600 via-indigo-500 to-purple-500"
-                  : "bg-gradient-to-r from-red-500 via-orange-500 to-amber-400"
+                  : "bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-400"
               )}
-              style={{ width: `${progress}%` }}
-            />
-            <div
-              className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -160,13 +279,13 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
               label: "Per Person",
               value: isFlexible
                 ? `Flexible (min ${pool.minContributionWei > BigInt(0)
-                    ? (Number(pool.minContributionWei) / 1e18).toFixed(2)
+                    ? (Number(pool.minContributionWei) / 1e18).toFixed(3)
                     : "0"} AVAX)`
                 : pool.contributionAmount,
               emoji: "💰"
             },
-            { label: "Deadline",  value: pool.deadline ?? "No deadline", emoji: "⏰" },
-            { label: "Pool ID",   value: `#${pool.id}`,                  emoji: "🔗" },
+            { label: "Deadline",  value: pool.deadline ?? "No deadline",        emoji: "⏰" },
+            { label: "Pool ID",   value: `#${numericPoolId}`,                   emoji: "🔗" },
             { label: "Pool Type", value: pool.poolType === "luckydraw" ? "Lucky Draw" : "Event Payout", emoji: "📊" },
           ].map((item) => (
             <div key={item.label} className="rounded-xl bg-zinc-800/40 border border-zinc-700/30 p-3.5">
@@ -176,114 +295,114 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
           ))}
         </div>
 
-        {/* ─── Recipient info (event pools) ────────────────────────────── */}
-        {pool.poolType === "event" && pool.recipientAddress && (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-500/5 border border-blue-500/15">
-            <div className="w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center flex-shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-blue-400">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Designated Recipient</p>
-              <a
-                href={`https://snowtrace.io/address/${pool.recipientAddress}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs font-mono text-blue-400 hover:text-blue-300 transition-colors truncate block"
-              >
-                {pool.recipientAddress}
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* ─── Lucky Draw Panel ──────────────────────────────────────────── */}
+        {/* Lucky Draw Panel */}
         {pool.poolType === "luckydraw" && (
           <LuckyDrawPanel pool={pool} isCreator={isCreator} />
         )}
 
-        {/* ─── Contribute CTA (non-admin / not yet contributed) ─────────── */}
+        {/* ── Contribute CTA ──────────────────────────────────────────── */}
         {isActive && pool.poolType !== "luckydraw" && (
           <div className="space-y-3">
 
-            {/* Not connected — show wallet gate CTA */}
+            {/* Idle: not connected */}
             {txState === "idle" && !isConnected && (
               <div className="space-y-2">
                 {isFlexible && (
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.01"
-                      min={Number(pool.minContributionWei) / 1e18}
+                      type="number" step="0.001"
+                      min={pool.minContributionWei > BigInt(0) ? Number(pool.minContributionWei) / 1e18 : 0}
                       value={customAmt}
                       onChange={(e) => setCustomAmt(e.target.value)}
-                      placeholder={`Min: ${(Number(pool.minContributionWei) / 1e18).toFixed(2)} AVAX`}
-                      className="w-full bg-zinc-800/70 border border-zinc-700/50 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                      placeholder={`Min: ${(Number(pool.minContributionWei) / 1e18).toFixed(3)} AVAX`}
+                      className="w-full bg-zinc-800/70 border border-zinc-700/50 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all"
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-orange-400">AVAX</span>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-emerald-400">AVAX</span>
                   </div>
                 )}
                 <button
                   onClick={gate.requireWallet}
-                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-sm hover:shadow-xl hover:shadow-orange-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold text-sm hover:shadow-xl hover:shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
                     <rect x="1" y="5" width="22" height="14" rx="3"/><path d="M1 10h22"/><circle cx="17" cy="15" r="1.5"/>
                   </svg>
                   Connect Wallet &amp; Contribute
                 </button>
-                <p className="text-[10px] text-zinc-600 text-center">Connect your wallet to sign this on-chain transaction</p>
+                <p className="text-[10px] text-zinc-600 text-center">MetaMask popup will appear to confirm the transaction</p>
               </div>
             )}
 
-            {/* Connected + idle — show contribute form */}
+            {/* Idle: connected */}
             {txState === "idle" && isConnected && (
               <div className="space-y-2">
                 {isFlexible && (
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.01"
-                      min={Number(pool.minContributionWei) / 1e18}
+                      type="number" step="0.001"
+                      min={pool.minContributionWei > BigInt(0) ? Number(pool.minContributionWei) / 1e18 : 0}
                       max={pool.maxContributionWei > BigInt(0) ? Number(pool.maxContributionWei) / 1e18 : undefined}
                       value={customAmt}
-                      onChange={(e) => setCustomAmt(e.target.value)}
-                      placeholder={`Min: ${(Number(pool.minContributionWei) / 1e18).toFixed(2)} AVAX`}
-                      className="w-full bg-zinc-800/70 border border-zinc-700/50 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-orange-500/40 transition-all"
+                      onChange={(e) => { setCustomAmt(e.target.value); setErrorMsg(null); }}
+                      placeholder={`Min: ${(Number(pool.minContributionWei) / 1e18).toFixed(3)} AVAX`}
+                      className="w-full bg-zinc-800/70 border border-zinc-700/50 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all"
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-orange-400">AVAX</span>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-emerald-400">AVAX</span>
                   </div>
                 )}
+                {errorMsg && <p className="text-xs text-red-400 px-1">{errorMsg}</p>}
                 <button
                   id="contribute-btn"
                   onClick={handleContribute}
                   disabled={isFlexible && !customAmt}
-                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-sm hover:shadow-xl hover:shadow-orange-500/20 active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-wait flex items-center justify-center gap-2.5"
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold text-sm hover:shadow-xl hover:shadow-emerald-500/20 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
                   Pay {isFlexible ? (customAmt ? `${customAmt} AVAX` : "Custom Amount") : pool.contributionAmount} &amp; Join Group
                 </button>
                 <p className="text-[11px] text-zinc-600 text-center">
-                  Transaction recorded on-chain — transparent &amp; verifiable on SnowTrace
+                  MetaMask will open to confirm — tx recorded on Avalanche Fuji C-Chain
                 </p>
               </div>
             )}
 
-            {/* Pending — waiting for wallet */}
+            {/* Pending — MetaMask open */}
             {txState === "pending" && (
-              <button disabled className="w-full py-4 rounded-2xl bg-zinc-800 border border-zinc-700/50 text-zinc-400 font-bold text-sm flex items-center justify-center gap-2.5 cursor-wait">
-                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75"/></svg>
-                Waiting for Wallet…
-              </button>
+              <div className="w-full py-4 rounded-2xl bg-zinc-800 border border-zinc-700/50 text-zinc-400 font-bold text-sm flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-2.5">
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/>
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75"/>
+                  </svg>
+                  Waiting for MetaMask…
+                </div>
+                <p className="text-[11px] text-zinc-600 font-normal">Check your wallet for the confirmation popup</p>
+              </div>
             )}
 
             {/* Confirming on-chain */}
             {txState === "confirming" && (
-              <button disabled className="w-full py-4 rounded-2xl bg-zinc-800 border border-zinc-700/50 text-zinc-400 font-bold text-sm flex items-center justify-center gap-2.5 cursor-wait">
-                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75"/></svg>
-                Confirming on Avalanche…
-              </button>
+              <div className="w-full py-4 rounded-2xl bg-zinc-800 border border-emerald-500/20 text-emerald-400 font-bold text-sm flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-2.5">
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/>
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75"/>
+                  </svg>
+                  Confirming on Avalanche Fuji…
+                </div>
+                {hash && (
+                  <a
+                    href={getExplorerTxUrl(chainId ?? 43113, hash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-zinc-500 hover:text-emerald-400 font-mono underline transition-colors"
+                  >
+                    {hash.slice(0, 18)}… ↗
+                  </a>
+                )}
+              </div>
             )}
 
             {/* Success */}
@@ -295,13 +414,15 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
                   </svg>
                 </div>
                 <p className="text-sm font-semibold text-emerald-300 mb-1">Contribution Confirmed! 🎉</p>
-                <p className="text-xs text-zinc-500 mb-3">You&apos;ve been added to the fund group automatically.</p>
-                {txHash && (
+                <p className="text-xs text-zinc-500 mb-3">
+                  Added to group · Hash saved to Supabase · Visible on SnowTrace
+                </p>
+                {hash && (
                   <a
-                    href={getExplorerTxUrl(chainId ?? 43113, txHash)}
+                    href={getExplorerTxUrl(chainId ?? 43113, hash)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-zinc-400 hover:text-orange-400 transition-all"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700/50 text-xs text-zinc-400 hover:text-emerald-400 transition-all"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
                       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
@@ -317,14 +438,14 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
               <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4">
                 <p className="text-sm font-semibold text-red-400 mb-1">Transaction Failed</p>
                 <p className="text-xs text-zinc-500 mb-3">{errorMsg}</p>
-                <button onClick={() => setTxState("idle")} className="text-xs text-orange-400 underline">Try again</button>
+                <button onClick={handleRetry} className="text-xs text-emerald-400 underline">Try again</button>
               </div>
             )}
 
           </div>
         )}
 
-        {/* ─── ADMIN SECTION: Creator actions ──────────────────────────── */}
+        {/* Admin actions */}
         {isCreator && isActive && pool.poolType === "event" && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 mb-1">
@@ -336,17 +457,19 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
           </div>
         )}
 
-        {/* ─── Contributors Ledger ──────────────────────────────────────── */}
+        {/* ── Contributors Ledger ───────────────────────────────────────── */}
         <div>
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-orange-400">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-400">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
             </svg>
-            {pool.poolType === "luckydraw" ? "Entrants" : "Contributors"} ({pool.participants.length})
-            <span className="text-[10px] text-zinc-500 font-normal ml-auto">On-chain · verifiable</span>
+            {pool.poolType === "luckydraw" ? "Entrants" : "Contributors"} ({members.length})
+            <span className="text-[10px] text-zinc-500 font-normal ml-auto">
+              {isMockPool ? "Demo data" : "Supabase · on-chain verified"}
+            </span>
           </h3>
 
-          {pool.participants.length === 0 ? (
+          {members.length === 0 ? (
             <div className="rounded-xl bg-zinc-800/30 border border-zinc-700/30 px-4 py-8 text-center">
               <p className="text-sm text-zinc-500">
                 {pool.poolType === "luckydraw" ? "No entrants yet. Be the first!" : "No contributors yet. Be the first!"}
@@ -354,13 +477,13 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
             </div>
           ) : (
             <div className="space-y-2">
-              {pool.participants.map((p, i) => (
+              {members.map((p, i) => (
                 <div
-                  key={i}
+                  key={`${p.address}-${i}`}
                   className="flex items-center justify-between px-4 py-3 rounded-xl bg-zinc-800/40 border border-zinc-700/30 hover:border-zinc-600/50 transition-all"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30 flex items-center justify-center text-[11px] font-bold text-violet-400 flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center text-[11px] font-bold text-emerald-400 flex-shrink-0">
                       {p.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
@@ -370,30 +493,32 @@ export default function PoolDetail({ pool, onClose }: PoolDetailProps) {
                   </div>
                   <div className="text-right">
                     <p className="text-xs font-bold text-emerald-400">{p.amount}</p>
-                    <a
-                      href={`https://snowtrace.io/tx/${p.txHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-zinc-600 hover:text-orange-400 transition-colors font-mono flex items-center gap-1 justify-end"
-                    >
-                      {p.txHash.slice(0, 10)}…
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-                      </svg>
-                    </a>
+                    {p.txHash && (
+                      <a
+                        href={`${explorerBase}/tx/${p.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-zinc-600 hover:text-emerald-400 transition-colors font-mono flex items-center gap-1 justify-end"
+                      >
+                        {p.txHash.slice(0, 10)}…
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                        </svg>
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>{/* end: Contributors Ledger */}
+        </div>
 
-      </div>{/* end: scrollable body */}
+      </div>{/* end scrollable body */}
 
-      {/* ── Wallet connect modal ──────────────────────────────────────── */}
+      {/* Wallet connect modal */}
       {gate.show && (
         <ConnectWalletModal
-          reason={`Connect your wallet to contribute ${pool.contributionAmount} and join this pool.`}
+          reason={`Connect your wallet to contribute ${pool.contributionAmount} and join this pool on Avalanche Fuji.`}
           {...gate.modalProps}
         />
       )}
