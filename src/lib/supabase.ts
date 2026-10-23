@@ -274,3 +274,90 @@ function shortenForDisplay(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+/* ──────────────────────────────────────────────────────────
+ *  Pool contribution helpers
+ * ────────────────────────────────────────────────────────── */
+
+/**
+ * Record an on-chain contribution in Supabase after the tx confirms.
+ * Upserts pool_members and appends pool_events.
+ */
+export async function recordPoolContribution(params: {
+  poolId: number;
+  walletAddress: string;
+  amountWei: string;
+  txHash: string;
+  chainId: number;
+  displayName?: string;
+}) {
+  const lower = params.walletAddress.toLowerCase();
+
+  // Ensure profile exists
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("wallet_address", lower)
+    .maybeSingle();
+
+  const profileId = profile?.id ?? null;
+
+  // Upsert pool_members
+  const { error: memberError } = await (supabase.from("pool_members") as any).upsert(
+    {
+      pool_id:        params.poolId,
+      wallet_address: lower,
+      profile_id:     profileId,
+      amount_wei:     params.amountWei,
+      tx_hash:        params.txHash,
+      contributed_at: new Date().toISOString(),
+    },
+    { onConflict: "pool_id,wallet_address" }
+  );
+
+  if (memberError) console.error("[Supabase] pool_members upsert:", memberError.message);
+
+  // Append pool_events
+  const { error: eventError } = await (supabase.from("pool_events") as any).insert({
+    pool_id:    params.poolId,
+    event_type: "contribution",
+    data: {
+      wallet:       lower,
+      amount_wei:   params.amountWei,
+      tx_hash:      params.txHash,
+      chain_id:     params.chainId,
+      display_name: params.displayName ?? lower.slice(0, 10),
+    },
+  });
+
+  if (eventError) console.error("[Supabase] pool_events insert:", eventError.message);
+
+  return !memberError && !eventError;
+}
+
+/**
+ * Fetch all contributors for a pool from Supabase pool_members.
+ */
+export async function getPoolMembers(poolId: number) {
+  const { data, error } = await (supabase.from("pool_members") as any)
+    .select(`
+      wallet_address,
+      amount_wei,
+      tx_hash,
+      contributed_at,
+      profile:profiles(display_name)
+    `)
+    .eq("pool_id", poolId)
+    .order("contributed_at", { ascending: true });
+
+  if (error) {
+    console.error("[Supabase] getPoolMembers:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row: any) => ({
+    address: row.wallet_address,
+    name:    row.profile?.display_name ?? row.wallet_address.slice(0, 8) + "…",
+    amount:  (Number(BigInt(row.amount_wei ?? "0")) / 1e18).toFixed(4) + " AVAX",
+    txHash:  row.tx_hash ?? "",
+  }));
+}

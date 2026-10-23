@@ -105,7 +105,7 @@ export type PoolMode = "event" | "luckydraw";
 export type ContributionMode = "fixed" | "flexible";
 
 export interface MockPoolDisplay {
-  id: number;
+  id: string | number;
   poolType: PoolMode;            // 'event' = EventPayout, 'luckydraw' = LuckyDraw
   title: string;
   description: string;
