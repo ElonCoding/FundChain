@@ -17,10 +17,14 @@ export default function FundsDashboard() {
 
   const { pools: onChainPools, poolCount, isLoading: isChainLoading, refetch } = useAllPools();
 
-  // Merge real on-chain pools first, then fallback mock pools
+  // Merge real on-chain pools first, then fallback mock pools.
+  // Prefix IDs so keys are guaranteed unique across both sources.
   const allAvailablePools: MockPoolDisplay[] = [
-    ...(onChainPools as unknown as MockPoolDisplay[]),
-    ...MOCK_POOLS,
+    ...(onChainPools as unknown as MockPoolDisplay[]).map((p) => ({
+      ...p,
+      id: `chain-${p.id}`,
+    })),
+    ...MOCK_POOLS.map((p) => ({ ...p, id: `mock-${p.id}` })),
   ];
 
   const filteredPools = allAvailablePools.filter((p) =>
