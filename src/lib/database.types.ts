@@ -140,6 +140,25 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["pool_members"]["Insert"]>;
         Relationships: [];
       };
+
+      pool_events: {
+        Row: {
+          id:         string;
+          pool_id:    number;
+          event_type: string;
+          data:       Json;
+          created_at: string;
+        };
+        Insert: {
+          id?:         string;
+          pool_id:    number;
+          event_type: string;
+          data?:      Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["pool_events"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -162,6 +181,7 @@ export type Conversation         = Database["public"]["Tables"]["conversations"]
 export type ConversationParticipant = Database["public"]["Tables"]["conversation_participants"]["Row"];
 export type Message              = Database["public"]["Tables"]["messages"]["Row"];
 export type PoolMember           = Database["public"]["Tables"]["pool_members"]["Row"];
+export type PoolEvent            = Database["public"]["Tables"]["pool_events"]["Row"];
 
 /** Conversation row enriched with sender profile (joined on fetch) */
 export type MessageWithSender = Message & {

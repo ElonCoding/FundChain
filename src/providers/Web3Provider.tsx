@@ -12,7 +12,10 @@ import { injected, coinbaseWallet, walletConnect } from "wagmi/connectors";
  *  Chain ID 43114 = Avalanche Mainnet C-Chain
  * ────────────────────────────────────────────────────────── */
 
-const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "";
+const WALLETCONNECT_PROJECT_ID =
+  process.env.NEXT_PUBLIC_WC_PROJECT_ID ??
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ??
+  "";
 
 const connectors = [
   // MetaMask / browser injected (EIP-1193)

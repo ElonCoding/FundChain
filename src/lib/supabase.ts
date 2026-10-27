@@ -317,7 +317,7 @@ export async function recordPoolContribution(params: {
   if (memberError) console.error("[Supabase] pool_members upsert:", memberError.message);
 
   // Append pool_events
-  const { error: eventError } = await (supabase.from("pool_events") as any).insert({
+  const { error: eventError } = await supabase.from("pool_events").insert({
     pool_id:    params.poolId,
     event_type: "contribution",
     data: {

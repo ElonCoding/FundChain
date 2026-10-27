@@ -59,7 +59,7 @@ export function getInitials(name: string): string {
 
 /** Format AVAX / fiat amounts with locale-aware separators */
 export function formatCurrency(value: number, symbol = "AVAX", decimals = 4): string {
-  return ${value.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} ;
+  return `${value.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} ${symbol}`;
 }
 
 /** Clamp a number between min and max */
