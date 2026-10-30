@@ -49,7 +49,7 @@ export function stringToColor(str: string): string {
 export function getInitials(name: string): string {
   // Strip leading emojis/symbols before splitting
   const cleaned = name.replace(/^[^\p{L}\p{N}]+/gu, "").trim();
-  const words   = cleaned.split(/\s+/);
+  const words = cleaned.split(/\s+/);
   if (words.length === 0 || !words[0]) return "?";
   // Use Array.from to correctly iterate Unicode code points (emoji-safe)
   const first = Array.from(words[0])[0] ?? "";

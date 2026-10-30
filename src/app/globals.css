@@ -50,7 +50,7 @@ body.app-shell {
 }
 
 body:not(.app-shell) {
-  overflow-y: auto;
+  overflow-y: auto !important;
   overflow-x: hidden;
 }
 
